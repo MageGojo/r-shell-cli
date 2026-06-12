@@ -29,6 +29,7 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 use crate::model::SavedConnection;
+use crate::native_backend::{AuthMethod, NativeConnectionManager, SshConfig};
 use crate::storage;
 
 pub const MCP_PORT: u16 = 9123;
@@ -39,11 +40,19 @@ static MCP_SERVER_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Bridge between the MCP HTTP handlers and the locally persisted workspace.
 ///
-/// Tool calls operate directly on the persisted `workspace.json`, guarded by a
-/// mutex so concurrent MCP requests serialize their read-modify-write cycles.
-#[derive(Debug, Default)]
+/// Connection-management tool calls operate directly on the persisted
+/// `workspace.json`, guarded by a mutex so concurrent MCP requests serialize
+/// their read-modify-write cycles.
+///
+/// The bridge also owns a long-lived [`NativeConnectionManager`] so that
+/// `ssh_session_*` tools can keep an SSH connection alive across many tool
+/// calls. This is the key to persistence: open a session once, then run
+/// commands / read / write files repeatedly without a fresh TCP+SSH handshake
+/// each time (which both wastes time and looks like an attack to the server).
+#[derive(Default)]
 pub struct McpBridge {
     lock: Mutex<()>,
+    manager: Arc<NativeConnectionManager>,
 }
 
 impl McpBridge {
@@ -241,6 +250,289 @@ impl McpBridge {
             other => Err(format!("Unknown MCP tool: {other}")),
         }
     }
+
+    // -- Persistent session tools -------------------------------------------
+    //
+    // These keep one SSH connection alive inside `self.manager`, keyed by a
+    // `session_id`, so subsequent exec/read/write calls reuse the same socket.
+
+    /// Build an [`SshConfig`] for `ssh_session_open`, resolving either a saved
+    /// connection (by id/name) or ad-hoc host params. Credential overrides in
+    /// the params win over anything stored on the saved connection.
+    fn resolve_open_config(
+        &self,
+        params: &OpenSessionParams,
+    ) -> StdResult<(String, SshConfig), String> {
+        if let Some(reference) = params
+            .connection
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            let _guard = self.lock.lock().map_err(|_| "bridge lock poisoned")?;
+            let workspace = storage::load_workspace();
+            let connection = workspace
+                .connections
+                .iter()
+                .find(|connection| connection.id == reference || connection.name == reference)
+                .ok_or_else(|| format!("saved connection not found: {reference}"))?;
+
+            let auth_method = match SavedConnection::normalize_auth_method(&connection.auth_method)
+            {
+                "publickey" => {
+                    let key_path = params
+                        .private_key_path
+                        .clone()
+                        .or_else(|| connection.private_key_path.clone())
+                        .filter(|value| !value.trim().is_empty())
+                        .ok_or_else(|| {
+                            format!("private key path required for {}", connection.name)
+                        })?;
+                    AuthMethod::PublicKey {
+                        key_path,
+                        passphrase: params
+                            .passphrase
+                            .clone()
+                            .or_else(|| connection.passphrase.clone()),
+                    }
+                }
+                _ => {
+                    let password = params
+                        .password
+                        .clone()
+                        .or_else(|| connection.password.clone())
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            format!(
+                                "no password available for {}; pass `password` to ssh_session_open \
+                                 or store one on the connection",
+                                connection.name
+                            )
+                        })?;
+                    AuthMethod::Password { password }
+                }
+            };
+
+            let session_id = connection.id.clone();
+            return Ok((
+                session_id,
+                SshConfig {
+                    host: connection.host.clone(),
+                    port: connection.port,
+                    username: connection.username.clone(),
+                    auth_method,
+                    insecure: params.insecure,
+                },
+            ));
+        }
+
+        // Ad-hoc target.
+        let host = params
+            .host
+            .clone()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "provide either `connection` or `host`".to_string())?;
+        let username = params
+            .username
+            .clone()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "`username` is required when using `host`".to_string())?;
+        let port = params.port.unwrap_or(22);
+        if port == 0 {
+            return Err("port must be greater than 0".to_string());
+        }
+
+        let auth_method = if let Some(key_path) = params
+            .private_key_path
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+        {
+            AuthMethod::PublicKey {
+                key_path,
+                passphrase: params.passphrase.clone(),
+            }
+        } else {
+            let password = params
+                .password
+                .clone()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    "ad-hoc host requires `password` or `private_key_path`".to_string()
+                })?;
+            AuthMethod::Password { password }
+        };
+
+        let session_id = params
+            .session_id
+            .clone()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| format!("{username}@{host}:{port}"));
+
+        Ok((
+            session_id,
+            SshConfig {
+                host,
+                port,
+                username,
+                auth_method,
+                insecure: params.insecure,
+            },
+        ))
+    }
+
+    async fn open_session(&self, params: OpenSessionParams) -> StdResult<Value, String> {
+        let (session_id, config) = self.resolve_open_config(&params)?;
+        let host = config.host.clone();
+        let port = config.port;
+        let username = config.username.clone();
+
+        let reused = self.manager.has_connection(&session_id).await && !params.reconnect;
+        if !reused {
+            self.manager
+                .create_connection(session_id.clone(), config)
+                .await
+                .map_err(|error| format!("failed to open SSH session: {error:#}"))?;
+        }
+
+        Ok(json!({
+            "session_id": session_id,
+            "host": host,
+            "port": port,
+            "username": username,
+            "reused": reused,
+            "open_sessions": self.manager.list_connection_ids().await,
+        }))
+    }
+
+    async fn session_exec(&self, params: SessionExecParams) -> StdResult<Value, String> {
+        let command = params.command.trim();
+        if command.is_empty() {
+            return Err("`command` must not be empty".to_string());
+        }
+        self.ensure_session(&params.session_id).await?;
+        let output = self
+            .manager
+            .execute_command(&params.session_id, command)
+            .await
+            .map_err(|error| format!("command failed: {error:#}"))?;
+        Ok(json!({
+            "session_id": params.session_id,
+            "command": command,
+            "output": output,
+        }))
+    }
+
+    async fn session_read_file(&self, params: SessionReadFileParams) -> StdResult<Value, String> {
+        self.ensure_session(&params.session_id).await?;
+        let bytes = self
+            .manager
+            .read_file_to_memory(&params.session_id, &params.path)
+            .await
+            .map_err(|error| format!("read failed: {error:#}"))?;
+
+        match String::from_utf8(bytes.clone()) {
+            Ok(content) => Ok(json!({
+                "session_id": params.session_id,
+                "path": params.path,
+                "encoding": "utf-8",
+                "size": content.len(),
+                "content": content,
+            })),
+            Err(_) => Ok(json!({
+                "session_id": params.session_id,
+                "path": params.path,
+                "encoding": "base64",
+                "size": bytes.len(),
+                "content_base64": base64_encode(&bytes),
+            })),
+        }
+    }
+
+    async fn session_write_file(&self, params: SessionWriteFileParams) -> StdResult<Value, String> {
+        self.ensure_session(&params.session_id).await?;
+        let data: Vec<u8> = match (&params.content, &params.content_base64) {
+            (Some(_), Some(_)) => {
+                return Err("provide only one of `content` or `content_base64`".to_string());
+            }
+            (Some(text), None) => text.clone().into_bytes(),
+            (None, Some(encoded)) => base64_decode(encoded)?,
+            (None, None) => Vec::new(),
+        };
+
+        let written = self
+            .manager
+            .write_file_from_bytes(&params.session_id, &params.path, &data)
+            .await
+            .map_err(|error| format!("write failed: {error:#}"))?;
+        Ok(json!({
+            "session_id": params.session_id,
+            "path": params.path,
+            "bytes_written": written,
+        }))
+    }
+
+    async fn session_list_dir(&self, params: SessionListDirParams) -> StdResult<Value, String> {
+        self.ensure_session(&params.session_id).await?;
+        let path = if params.path.trim().is_empty() {
+            "."
+        } else {
+            params.path.trim()
+        };
+        let entries = self
+            .manager
+            .list_directory(&params.session_id, path)
+            .await
+            .map_err(|error| format!("list failed: {error:#}"))?;
+        let entries: Vec<Value> = entries
+            .iter()
+            .map(|entry| {
+                json!({
+                    "name": entry.name,
+                    "kind": entry.kind.label(),
+                    "permissions": entry.permissions,
+                    "size": entry.size,
+                    "modified": entry.modified,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "session_id": params.session_id,
+            "path": path,
+            "entries": entries,
+        }))
+    }
+
+    async fn list_sessions(&self) -> StdResult<Value, String> {
+        Ok(json!({ "open_sessions": self.manager.list_connection_ids().await }))
+    }
+
+    async fn close_session(&self, params: CloseSessionParams) -> StdResult<Value, String> {
+        let existed = self.manager.has_connection(&params.session_id).await;
+        if existed {
+            self.manager
+                .close_connection(&params.session_id)
+                .await
+                .map_err(|error| format!("failed to close session: {error:#}"))?;
+        }
+        Ok(json!({
+            "session_id": params.session_id,
+            "closed": existed,
+            "open_sessions": self.manager.list_connection_ids().await,
+        }))
+    }
+
+    async fn ensure_session(&self, session_id: &str) -> StdResult<(), String> {
+        if self.manager.has_connection(session_id).await {
+            Ok(())
+        } else {
+            Err(format!(
+                "no open session '{session_id}'. Open one first with ssh_session_open."
+            ))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -315,6 +607,89 @@ pub struct DeleteSshConnectionParams {
     pub close_open_tabs: bool,
 }
 
+/// Open (or reuse) a persistent SSH session. Use a saved `connection` (by id or
+/// name) or ad-hoc `host`/`username`. Returns a `session_id` for the other
+/// `ssh_session_*` tools.
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct OpenSessionParams {
+    /// Saved connection id or name to open. Mutually exclusive with `host`.
+    #[serde(default)]
+    pub connection: Option<String>,
+    /// Ad-hoc host (used instead of `connection`).
+    #[serde(default)]
+    pub host: Option<String>,
+    /// Ad-hoc username (required with `host`).
+    #[serde(default)]
+    pub username: Option<String>,
+    /// Ad-hoc port (defaults to 22).
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// Password override (or the password for an ad-hoc password-auth host).
+    #[serde(default)]
+    pub password: Option<String>,
+    /// Private key path override (or the key for an ad-hoc publickey host).
+    #[serde(default)]
+    pub private_key_path: Option<String>,
+    /// Passphrase for an encrypted private key.
+    #[serde(default)]
+    pub passphrase: Option<String>,
+    /// Explicit session id for an ad-hoc target (defaults to user@host:port).
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// Skip host-key verification (dangerous).
+    #[serde(default)]
+    pub insecure: bool,
+    /// Force a fresh connection even if a session with this id is already open.
+    #[serde(default)]
+    pub reconnect: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct SessionExecParams {
+    /// Session id returned by ssh_session_open.
+    pub session_id: String,
+    /// Command to run on the already-open session.
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct SessionReadFileParams {
+    pub session_id: String,
+    /// Absolute (or remote-relative) path to read.
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct SessionWriteFileParams {
+    pub session_id: String,
+    /// Remote path to create/overwrite.
+    pub path: String,
+    /// UTF-8 text content. Use this for text files. Mutually exclusive with
+    /// `content_base64`.
+    #[serde(default)]
+    pub content: Option<String>,
+    /// Base64-encoded bytes for binary content.
+    #[serde(default)]
+    pub content_base64: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct SessionListDirParams {
+    pub session_id: String,
+    /// Remote directory to list (defaults to ".").
+    #[serde(default = "default_list_dir")]
+    pub path: String,
+}
+
+fn default_list_dir() -> String {
+    ".".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+pub struct CloseSessionParams {
+    pub session_id: String,
+}
+
 #[derive(Clone)]
 pub struct RShellMcpServer {
     bridge: Arc<McpBridge>,
@@ -331,7 +706,12 @@ impl RShellMcpServer {
     }
 
     async fn forward(&self, tool: &str, params: Value) -> CallToolResult {
-        match self.bridge.dispatch(tool, params) {
+        Self::into_result(self.bridge.dispatch(tool, params))
+    }
+
+    /// Convert a bridge result into an MCP `CallToolResult`.
+    fn into_result(result: StdResult<Value, String>) -> CallToolResult {
+        match result {
             Ok(value) => CallToolResult::structured(value),
             Err(error) => {
                 CallToolResult::structured_error(json!({ "success": false, "error": error }))
@@ -393,6 +773,69 @@ impl RShellMcpServer {
     async fn r_shell_ssh_tabs_list(&self) -> CallToolResult {
         self.forward("r_shell_ssh_tabs_list", json!({})).await
     }
+
+    #[tool(
+        description = "Open (or reuse) a persistent SSH session that stays connected across calls. \
+                       Returns a session_id to use with ssh_exec / ssh_read_file / ssh_write_file / \
+                       ssh_list_dir. Use a saved `connection` (id|name) or ad-hoc `host`/`username`."
+    )]
+    async fn ssh_session_open(
+        &self,
+        Parameters(params): Parameters<OpenSessionParams>,
+    ) -> CallToolResult {
+        Self::into_result(self.bridge.open_session(params).await)
+    }
+
+    #[tool(
+        description = "Run a command on an already-open SSH session (reuses the connection, no \
+                       reconnect). Requires a session_id from ssh_session_open."
+    )]
+    async fn ssh_exec(&self, Parameters(params): Parameters<SessionExecParams>) -> CallToolResult {
+        Self::into_result(self.bridge.session_exec(params).await)
+    }
+
+    #[tool(
+        description = "Read a remote file over an open SSH session. Returns UTF-8 text when \
+                       possible, otherwise base64. Ideal for editing a file without reconnecting."
+    )]
+    async fn ssh_read_file(
+        &self,
+        Parameters(params): Parameters<SessionReadFileParams>,
+    ) -> CallToolResult {
+        Self::into_result(self.bridge.session_read_file(params).await)
+    }
+
+    #[tool(
+        description = "Write/overwrite a remote file over an open SSH session. Provide `content` \
+                       for text or `content_base64` for binary. No reconnect needed."
+    )]
+    async fn ssh_write_file(
+        &self,
+        Parameters(params): Parameters<SessionWriteFileParams>,
+    ) -> CallToolResult {
+        Self::into_result(self.bridge.session_write_file(params).await)
+    }
+
+    #[tool(description = "List a remote directory over an open SSH session (Linux hosts).")]
+    async fn ssh_list_dir(
+        &self,
+        Parameters(params): Parameters<SessionListDirParams>,
+    ) -> CallToolResult {
+        Self::into_result(self.bridge.session_list_dir(params).await)
+    }
+
+    #[tool(description = "List the session ids that currently have a live SSH connection open.")]
+    async fn ssh_sessions_list(&self) -> CallToolResult {
+        Self::into_result(self.bridge.list_sessions().await)
+    }
+
+    #[tool(description = "Close a persistent SSH session opened with ssh_session_open.")]
+    async fn ssh_session_close(
+        &self,
+        Parameters(params): Parameters<CloseSessionParams>,
+    ) -> CallToolResult {
+        Self::into_result(self.bridge.close_session(params).await)
+    }
 }
 
 #[tool_handler]
@@ -400,7 +843,12 @@ impl ServerHandler for RShellMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::from_build_env())
-            .with_instructions("R-Shell MCP server for managing saved SSH connections.".to_string())
+            .with_instructions(
+                "R-Shell MCP server. Manage saved SSH connections, and open persistent SSH \
+                 sessions (ssh_session_open) that stay connected so you can run commands and \
+                 read/write remote files repeatedly without reconnecting."
+                    .to_string(),
+            )
     }
 }
 
@@ -518,6 +966,77 @@ fn parse_params<T: for<'de> Deserialize<'de>>(value: Value) -> StdResult<T, Stri
     serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
+const BASE64_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Minimal standard base64 encoder (with `=` padding). Kept dependency-free so
+/// binary file contents can round-trip through MCP JSON responses.
+fn base64_encode(input: &[u8]) -> String {
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        out.push(BASE64_ALPHABET[((triple >> 18) & 0x3f) as usize] as char);
+        out.push(BASE64_ALPHABET[((triple >> 12) & 0x3f) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            BASE64_ALPHABET[((triple >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            BASE64_ALPHABET[(triple & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+/// Minimal standard base64 decoder. Ignores ASCII whitespace; rejects other
+/// invalid characters.
+fn base64_decode(input: &str) -> StdResult<Vec<u8>, String> {
+    fn value_of(byte: u8) -> StdResult<u32, String> {
+        match byte {
+            b'A'..=b'Z' => Ok((byte - b'A') as u32),
+            b'a'..=b'z' => Ok((byte - b'a' + 26) as u32),
+            b'0'..=b'9' => Ok((byte - b'0' + 52) as u32),
+            b'+' => Ok(62),
+            b'/' => Ok(63),
+            _ => Err(format!("invalid base64 character: {byte:#x}")),
+        }
+    }
+
+    let filtered: Vec<u8> = input
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace() && *byte != b'=')
+        .collect();
+
+    let mut out = Vec::with_capacity(filtered.len() / 4 * 3);
+    for chunk in filtered.chunks(4) {
+        if chunk.len() == 1 {
+            return Err("invalid base64 length".to_string());
+        }
+        let mut buffer = 0u32;
+        for &byte in chunk {
+            buffer = (buffer << 6) | value_of(byte)?;
+        }
+        // Left-align the bits we actually have.
+        buffer <<= 6 * (4 - chunk.len());
+
+        out.push(((buffer >> 16) & 0xff) as u8);
+        if chunk.len() >= 3 {
+            out.push(((buffer >> 8) & 0xff) as u8);
+        }
+        if chunk.len() >= 4 {
+            out.push((buffer & 0xff) as u8);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,6 +1060,39 @@ mod tests {
     fn rejects_null_origin() {
         // `null` is sent by sandboxed iframes / file:// pages and must be denied.
         assert!(!is_allowed_local_origin("null"));
+    }
+
+    #[test]
+    fn base64_round_trips() {
+        for sample in [
+            &b""[..],
+            b"f",
+            b"fo",
+            b"foo",
+            b"foob",
+            b"fooba",
+            b"foobar",
+            b"\x00\xff\x10\x80binary\xfe",
+        ] {
+            let encoded = base64_encode(sample);
+            let decoded = base64_decode(&encoded).expect("decode");
+            assert_eq!(decoded, sample, "round-trip failed for {sample:?}");
+        }
+    }
+
+    #[test]
+    fn base64_matches_known_vectors() {
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_decode("Zm9vYmFy").unwrap(), b"foobar");
+        // Whitespace (incl. newlines) is ignored.
+        assert_eq!(base64_decode("Zm9v\n").unwrap(), b"foo");
+        assert_eq!(base64_decode("Zm 9v").unwrap(), b"foo");
+        // A character outside the alphabet is rejected.
+        assert!(base64_decode("Zm9v!").is_err());
+        // A single trailing char cannot form a byte.
+        assert!(base64_decode("Zm9vY").is_err());
     }
 
     #[test]

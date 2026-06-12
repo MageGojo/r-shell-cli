@@ -29,6 +29,12 @@ pub struct NativeConnectionManager {
     pty_sessions: RwLock<HashMap<String, Arc<PtySession>>>,
 }
 
+impl Default for NativeConnectionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NativeConnectionManager {
     pub fn new() -> Self {
         Self {
@@ -120,6 +126,50 @@ impl NativeConnectionManager {
 
         let client = client.read().await;
         client.upload_file(local_path, remote_path).await
+    }
+
+    /// Read a remote file's full contents into memory over the live session's
+    /// SFTP subsystem. Used by the MCP `ssh_read_file` tool so a file can be
+    /// edited without reconnecting.
+    pub async fn read_file_to_memory(
+        &self,
+        connection_id: &str,
+        remote_path: &str,
+    ) -> Result<Vec<u8>> {
+        let connections = self.connections.read().await;
+        let client = connections
+            .get(connection_id)
+            .ok_or_else(|| anyhow::anyhow!("Connection not found"))?;
+
+        let client = client.read().await;
+        client.download_file_to_memory(remote_path).await
+    }
+
+    /// Write bytes to a remote file over the live session's SFTP subsystem,
+    /// creating/truncating it. Used by the MCP `ssh_write_file` tool.
+    pub async fn write_file_from_bytes(
+        &self,
+        connection_id: &str,
+        remote_path: &str,
+        data: &[u8],
+    ) -> Result<u64> {
+        let connections = self.connections.read().await;
+        let client = connections
+            .get(connection_id)
+            .ok_or_else(|| anyhow::anyhow!("Connection not found"))?;
+
+        let client = client.read().await;
+        client.upload_file_from_bytes(data, remote_path).await
+    }
+
+    /// True if a live session is currently open for `connection_id`.
+    pub async fn has_connection(&self, connection_id: &str) -> bool {
+        self.connections.read().await.contains_key(connection_id)
+    }
+
+    /// IDs of all currently open live sessions.
+    pub async fn list_connection_ids(&self) -> Vec<String> {
+        self.connections.read().await.keys().cloned().collect()
     }
 
     pub async fn start_pty_session(&self, connection_id: &str, cols: u32, rows: u32) -> Result<()> {

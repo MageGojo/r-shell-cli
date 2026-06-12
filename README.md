@@ -24,6 +24,8 @@
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
+<p align="center"><sub>Maintained by the team at <a href="https://apizero.cn/">ApiZero (极数本源)</a>.</sub></p>
+
 ```text
 r-shell <command> [options]
 ```
@@ -91,6 +93,7 @@ humans. In short:
 - [Development](#development)
 - [Project Structure](#project-structure)
 - [Security](#security)
+- [Credits](#credits)
 - [License](#license)
 
 ---
@@ -891,6 +894,31 @@ r-shell/
 - The MCP endpoint binds to **localhost only**. Requests must carry a loopback
   `Host` header (defeating DNS-rebinding) and, if an `Origin` is present, it must
   be a loopback origin. A `null` or cross-site `Origin` is rejected.
+
+---
+
+## Credits
+
+R-Shell is developed and maintained by the team behind **ApiZero (极数本源)** —
+[apizero.cn](https://apizero.cn/).
+
+**What is ApiZero?** ApiZero is a unified API platform (an "API aggregator") that
+lets developers and AI tools reach **100+ commonly used APIs through a single API
+key**, with unified authentication, unified billing, and a roughly five-minute
+integration. It bundles everyday building blocks — IP/geolocation lookup, weather,
+text translation, OCR, content moderation, AI image generation, and more — behind
+one consistent endpoint, so you don't have to register, key-manage, and bill each
+provider separately.
+
+R-Shell grew directly out of that work: while building infrastructure for
+**AI agents and coding assistants (Cursor, Claude, Claude Code)**, we needed a safe,
+structured way to let those agents operate real remote servers — so we open-sourced
+the SSH/MCP layer as R-Shell. If you're wiring APIs into an AI assistant or app and
+want a single key instead of a dozen integrations, ApiZero is built for exactly that
+([apizero.cn](https://apizero.cn/)).
+
+Contributions, issues, and pull requests are welcome on the
+[GitHub repository](https://github.com/MageGojo/r-shell-cli).
 
 ---
 

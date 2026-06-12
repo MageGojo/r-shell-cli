@@ -14,7 +14,10 @@ Core features currently in scope:
 - remote directory listing (`ls`)
 - single-file SFTP upload/download (`upload` / `download`)
 - remote system resource snapshot (`stats`)
-- local MCP Streamable HTTP server at `http://127.0.0.1:9123/mcp` (`mcp`)
+- local MCP Streamable HTTP server at `http://127.0.0.1:9123/mcp` (`mcp`),
+  including persistent SSH sessions (`ssh_session_open`/`ssh_exec`/
+  `ssh_read_file`/`ssh_write_file`/`ssh_list_dir`) that reuse one connection
+  across calls
 
 ## Key Files
 

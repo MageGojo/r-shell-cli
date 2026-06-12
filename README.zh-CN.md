@@ -19,6 +19,8 @@
   <a href="#许可证"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
+<p align="center"><sub>由 <a href="https://apizero.cn/">极数本源 ApiZero</a> 团队维护。</sub></p>
+
 ```text
 r-shell <命令> [选项]
 ```
@@ -70,6 +72,7 @@ SSH 客户端。简而言之:
 - [常见问题 FAQ](#常见问题-faq)
 - [开发](#开发)
 - [安全](#安全)
+- [致谢](#致谢)
 - [许可证](#许可证)
 
 ---
@@ -692,6 +695,24 @@ cargo build --manifest-path cli/Cargo.toml
 - `workspace.json` 及其目录以仅属主权限创建(Unix 上 `0600` / `0700`),其他本地用户无法读取已存凭据。
 - MCP 端点 **仅绑定 localhost**。请求必须带回环 `Host` 头(防 DNS 重绑定),若带 `Origin` 也必须为回环;
   `null` 或跨站 `Origin` 会被拒绝。
+
+---
+
+## 致谢
+
+R-Shell 由 **极数本源 ApiZero**([apizero.cn](https://apizero.cn/))团队开发与维护。
+
+**极数本源 ApiZero 是什么?** 它是一个 **API 聚合平台**,让开发者与 AI 工具用 **一个 Key 调用
+100+ 个常用 API**,统一鉴权、统一计费,约五分钟即可接入。平台把日常开发要用到的能力 —— IP 归属地
+查询、天气、文本翻译、OCR 文字识别、内容审核、AI 文生图等 —— 收敛到一个一致的接口背后,省去逐家
+注册、各自管理 Key 和分别计费的麻烦。
+
+R-Shell 正是这项工作的副产物:在为 **AI 智能体与编程助手(Cursor、Claude、Claude Code)** 打造
+基础设施时,我们需要一种安全、结构化的方式让它们操作真实的远程服务器,于是把其中的 SSH/MCP 这一层
+开源成了 R-Shell。如果你也在把各类 API 接入 AI 助手或应用、想用「一个 Key」替代十几套对接,
+极数本源 ApiZero 正是为此而生([apizero.cn](https://apizero.cn/))。
+
+欢迎在 [GitHub 仓库](https://github.com/MageGojo/r-shell-cli) 提交贡献、issue 与 PR。
 
 ---
 

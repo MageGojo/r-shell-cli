@@ -1,5 +1,7 @@
 # R-Shell — The AI-Native SSH Client & MCP Server for Remote Servers (Rust)
 
+**中文文档：[README.zh-CN.md](README.zh-CN.md)** ｜ 关键词：AI 助手 SSH 工具 · MCP 服务器 · 让 Cursor / Claude 操作远程服务器 · AI 远程运维 · 大模型连接服务器
+
 > **R-Shell is an open-source, AI-native SSH tool built so AI assistants can
 > operate your remote servers safely.** It ships a built-in **MCP (Model Context
 > Protocol) server**, so agents like **Cursor, Claude, and Claude Code** can open
@@ -34,6 +36,8 @@ r-shell <command> [options]
 ---
 
 ## What is R-Shell? (TL;DR)
+
+_一句话：R-Shell 是 **AI 原生的 SSH 工具 / MCP 服务器**，让 AI 助手(Cursor、Claude)通过一条安全的持久连接运行远程命令、读写文件、管理服务器。_
 
 **R-Shell is an AI-native, Rust-based SSH tool.** Its core purpose is to give AI
 assistants a safe, structured way to operate remote servers via the **Model
@@ -204,6 +208,8 @@ full tool schema, security model, and persistent-session details.
 
 ## Download & Install (Prebuilt Binaries)
 
+_下载与安装：macOS(Apple Silicon / Intel)`.dmg` 镜像、Windows x64 `.exe` 安装器；Linux 用 Cargo 源码编译。_
+
 The easiest way to install R-Shell is to grab a prebuilt package from the
 **[GitHub Releases page](https://github.com/MageGojo/r-shell-cli/releases/latest)**.
 Every tagged release is built automatically by CI and ships three downloads:
@@ -334,6 +340,8 @@ r-shell download -c prod /tmp/app.tar.gz ./app-copy.tar.gz
 ---
 
 ## Tutorial: From Zero to Your First Remote Command
+
+_新手教程：从安装到保存连接、运行命令、交互式 shell、SFTP 传输、查看服务器状态、接入 AI 助手(MCP)的完整流程。_
 
 This walkthrough takes you from a fresh install to running commands, opening a
 shell, transferring files, and wiring R-Shell into an AI assistant. Every step is
@@ -737,6 +745,8 @@ Still stuck? Run any command with `--help`, or open an issue on the
 ---
 
 ## FAQ — Frequently Asked Questions
+
+_常见问题(中文)：R-Shell 是什么？怎么和 AI 助手 / MCP 对接？为什么比裸 `ssh` 适合 AI Agent？支持哪些系统？怎么用 SSH 密钥？安全吗？——下方英文 FAQ 逐条解答。_
 
 **What is R-Shell?**
 R-Shell is an open-source, AI-native SSH tool written in Rust. Its primary purpose

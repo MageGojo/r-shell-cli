@@ -6,124 +6,130 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  release:
-    permissions:
-      contents: write
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          - name: macos-apple-silicon
+            os: macos-14
             target: aarch64-apple-darwin
-          - platform: macos-latest
+            asset: r-shell-macos-apple-silicon.dmg
+          - name: macos-intel
+            os: macos-13
             target: x86_64-apple-darwin
-          - platform: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - platform: windows-latest
+            asset: r-shell-macos-intel.dmg
+          - name: windows-x64
+            os: windows-latest
             target: x86_64-pc-windows-msvc
-
-    runs-on: ${{ matrix.platform }}
+            asset: r-shell-windows-x64-installer.exe
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: './cli -> target'
-
-      - name: Install build dependencies (Linux)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev
+          key: ${{ matrix.target }}
 
       - name: Build release binary
-        working-directory: cli
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --manifest-path cli/Cargo.toml --target ${{ matrix.target }}
 
-      - name: Package binary (Unix)
-        if: matrix.platform != 'windows-latest'
+      - name: Package macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
         run: |
-          BIN_DIR="cli/target/${{ matrix.target }}/release"
-          ARCHIVE="r-shell-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
-          tar -czvf "$ARCHIVE" -C "$BIN_DIR" r-shell
-          echo "ASSET=$ARCHIVE" >> "$GITHUB_ENV"
+          set -euo pipefail
+          chmod +x packaging/macos/create_dmg.sh
+          packaging/macos/create_dmg.sh "${{ matrix.target }}" "dist/${{ matrix.asset }}"
 
-      - name: Package binary (Windows)
-        if: matrix.platform == 'windows-latest'
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Package Windows installer
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $BinDir = "cli/target/${{ matrix.target }}/release"
-          $Archive = "r-shell-${{ github.ref_name }}-${{ matrix.target }}.zip"
-          Compress-Archive -Path "$BinDir/r-shell.exe" -DestinationPath $Archive
-          "ASSET=$Archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $ErrorActionPreference = "Stop"
 
-      - name: Upload release asset
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: 'r-shell ${{ github.ref_name }}'
-          body: 'See the assets to download this version.'
-          draft: false
-          prerelease: false
-          files: ${{ env.ASSET }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Derive a clean version from the tag (fallback to 0.0.0).
+          $version = "${{ github.ref_name }}"
+          if ($version.StartsWith("v")) { $version = $version.Substring(1) }
+          if ($version -eq "main" -or [string]::IsNullOrWhiteSpace($version)) { $version = "0.0.0" }
+          $parts = @()
+          foreach ($part in ($version -split '\.')) {
+            if ($part -match '^\d+$') { $parts += $part } else { $parts += "0" }
+          }
+          while ($parts.Count -lt 4) { $parts += "0" }
+          $versionQuad = ($parts[0..3] -join ".")
 
-  # Generate SHA256 checksums for Homebrew
-  generate-checksums:
-    needs: release
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
-    steps:
-      - name: Wait for release assets
-        run: sleep 30
+          $root = (Resolve-Path ".").Path
+          $stage = "$root\dist\stage"
+          New-Item -ItemType Directory -Force "$root\dist", $stage | Out-Null
+          Copy-Item "cli/target/${{ matrix.target }}/release/r-shell.exe" "$stage\"
+          Copy-Item "README.md" "$stage\" -ErrorAction SilentlyContinue
+          Copy-Item "LICENSE" "$stage\" -ErrorAction SilentlyContinue
 
-      - name: Download release assets
-        uses: robinraju/release-downloader@v1.11
-        with:
-          tag: ${{ github.ref_name }}
-          fileName: '*.tar.gz'
-          out-file-path: assets
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (!(Test-Path $makensis)) { $makensis = "makensis" }
+          & $makensis `
+            "/DAPP_VERSION=$version" `
+            "/DAPP_VERSION_QUAD=$versionQuad" `
+            "/DSTAGE_DIR=$stage" `
+            "/DOUTPUT_EXE=$root\dist\${{ matrix.asset }}" `
+            "packaging\windows\r-shell.nsi"
 
-      - name: Generate SHA256 checksums
+      - name: Verify packaged asset
+        shell: pwsh
         run: |
-          cd assets
-          echo "# SHA256 Checksums for r-shell ${{ github.ref_name }}" > checksums.txt
-          echo "" >> checksums.txt
-          for f in *.tar.gz; do
-            if [ -f "$f" ]; then
-              sha256sum "$f" | tee -a checksums.txt
-            fi
-          done
+          $ErrorActionPreference = "Stop"
+          Get-ChildItem -Path "dist" -Recurse | Format-Table FullName, Length
+          if (!(Test-Path "dist/${{ matrix.asset }}")) {
+            throw "Missing packaged asset: dist/${{ matrix.asset }}"
+          }
 
-      - name: Upload checksums to release
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: assets/checksums.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
 
-  # Update Homebrew tap (requires HOMEBREW_TAP_TOKEN secret)
-  update-homebrew:
-    needs: generate-checksums
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta')
     steps:
-      - name: Update Homebrew Cask
-        uses: peter-evans/repository-dispatch@v3
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          repository: GOODBOY008/homebrew-tap
-          event-type: update-cask
-          client-payload: '{"version": "${{ github.ref_name }}", "repository": "${{ github.repository }}"}'
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "R-Shell $TAG_NAME" \
+            --notes "Automated R-Shell release. Downloads: macOS Apple Silicon (.dmg), macOS Intel (.dmg), and a Windows x64 installer (.exe)."

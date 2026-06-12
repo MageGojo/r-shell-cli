@@ -1,0 +1,27 @@
+[package]
+name = "r-shell"
+version = "2.1.0"
+edition = "2024"
+
+[[bin]]
+name = "r-shell"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+dirs = "6"
+rmcp = { version = "1.7", features = ["server", "schemars", "transport-streamable-http-server"] }
+russh = { version = "0.43", features = ["openssl", "vendored-openssl"] }
+russh-keys = { version = "0.43", features = ["vendored-openssl"] }
+russh-sftp = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+
+[dev-dependencies]
+tempfile = "3"

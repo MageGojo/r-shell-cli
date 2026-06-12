@@ -1,153 +1,99 @@
 # R-Shell Copilot Instructions
 
 ## Project Overview
-R-Shell is a modern SSH client built with **React 19 + TypeScript (frontend)** and **Tauri 2 + Rust (backend)**. This is an AI-assisted development project where the frontend was generated from [Figma designs](https://www.figma.com/make/uUd7WO54vPnv03SmioKWqj/SSH-Client-Application).
+
+R-Shell is a Rust-native **command-line** SSH workspace. The entire application lives in `cli/` — there is no graphical UI, web frontend, or Tauri backend. SSH transport, persistence, and the MCP server all run inside a single `clap`-based CLI binary named `r-shell`.
 
 ## Architecture
 
-### Dual Communication Model
-- **Tauri Commands** (`invoke()`): One-off operations like connection setup, file operations, system stats
-- **WebSocket (Port 9001)**: Bidirectional streaming for interactive PTY terminal sessions
-  - Frontend: [pty-terminal.tsx](src/components/pty-terminal.tsx) connects to `ws://127.0.0.1:9001`
-  - Backend: [websocket_server.rs](src-tauri/src/websocket_server.rs) manages PTY I/O with flow control
-  - See `WsMessage` enum for message protocol (StartPty, Input, Output, Resize, Pause/Resume, Close)
+The app is a `clap` CLI (entry point `cli/src/main.rs`). Subcommands map to single responsibilities and reuse a set of UI-free core modules. A Tokio runtime is built per command invocation to drive async SSH/SFTP and the MCP HTTP server.
 
-### Key Backend Components
-- **SessionManager** ([session_manager.rs](src-tauri/src/session_manager.rs)): Thread-safe session lifecycle with `Arc<RwLock<HashMap>>`
-  - Manages both SSH clients and PTY sessions separately
-  - Supports connection cancellation via `CancellationToken`
-- **SSH Module** ([ssh/mod.rs](src-tauri/src/ssh/mod.rs)): Built on `russh` + `russh_sftp`
-  - Auth methods: password, public key (supports encrypted keys with passphrase)
-  - Expands `~/` paths automatically
-- **Tauri Commands** ([commands.rs](src-tauri/src/commands.rs)): 20+ commands including `ssh_connect`, `ssh_disconnect`, `get_system_stats`, `sftp_*`, etc.
-  - All commands use `State<'_, Arc<SessionManager>>` for shared state
+### Subcommands
 
-### Frontend Patterns
+| Command | Responsibility |
+| --- | --- |
+| `connections list/add/update/remove` | Manage saved connections in `workspace.json` |
+| `exec` | Run one remote command and print output |
+| `shell` | Interactive PTY shell (crossterm raw mode) |
+| `ls` | List a remote directory |
+| `upload` / `download` | Single-file SFTP transfer |
+| `stats` | One-shot remote system resource snapshot |
+| `mcp` | Run the local MCP server |
 
-#### State Management
-- **Session Storage** ([session-storage.ts](src/lib/session-storage.ts)): Hierarchical session organization with folders
-  - Sessions persisted in localStorage with metadata (createdAt, lastConnected, favorite, tags)
-  - Auto-creates default folder structure: "All Sessions", "Personal", "Work"
-- **Layout System** ([layout-context.tsx](src/lib/layout-context.tsx), [layout-config.ts](src/lib/layout-config.ts))
-  - VS Code-like panel management with presets (Default, Minimal, Focus Mode, Full Stack, Zen)
-  - Keyboard shortcuts: `Ctrl+B` (left sidebar), `Ctrl+J` (bottom), `Ctrl+M` (right), `Ctrl+Z` (zen mode)
-  - Panel sizes auto-saved to localStorage per panel group
+### Module Map (`cli/src/`)
 
-#### Component Structure
-- **UI Components** (`src/components/ui/*`): 48+ Radix UI primitives (shadcn/ui pattern)
-  - All use `class-variance-authority` for variant styling
-  - Built with `@radix-ui/*` for accessibility (WAI-ARIA compliant)
-- **Feature Components**: Main app logic in [App.tsx](src/App.tsx)
-  - Multi-tab session management with duplication support
-  - Resizable panel groups using `react-resizable-panels`
-  - Terminal uses xterm.js v5 with addons (fit, search, web-links, webgl/canvas renderers)
+| Module | Responsibility |
+| --- | --- |
+| `main.rs` | CLI entry, `clap` arg parsing, command handlers, output formatting |
+| `model.rs` | Persisted workspace + connection data models (`SavedConnection`, `TerminalTab`, `ConnectionStatus`, `PersistedWorkspace`) |
+| `storage.rs` | Local workspace persistence (load/save JSON on disk) |
+| `ssh.rs` (+ `ssh/tests.rs`) | SSH, PTY, and SFTP implementation on `russh` / `russh-sftp` |
+| `native_backend.rs` | Connection manager (`NativeConnectionManager`, `SshConfig`, `AuthMethod`, remote file types) |
+| `monitor.rs` | Remote system monitoring/stats parsing and formatting |
+| `mcp.rs` | Local MCP Streamable HTTP server |
+
+### MCP Server
+
+A local MCP Streamable HTTP server is exposed while the app runs, bound to localhost only:
+
+```text
+http://127.0.0.1:9123/mcp
+```
+
+Tools cover SSH connection management and listing open tabs. **MCP responses must never include passwords, private keys, or passphrases.**
 
 ## Development Workflow
 
-### Running the App
+The root `package.json` is only a thin wrapper around Cargo.
+
+### Running the CLI
+
 ```bash
-# Frontend only (Vite dev server, port 1420)
 pnpm dev
-
-# Desktop app with hot reload
-pnpm tauri dev
-
-# Build production
-pnpm build && pnpm tauri build
+# equivalent to:
+cargo run --manifest-path cli/Cargo.toml -- --help
 ```
 
-### Testing
+### Check, Test, Build, Format
+
 ```bash
-# Frontend tests (Vitest)
-pnpm test
-
-# Rust tests
-cd src-tauri && cargo test
-
-# E2E tests
-pnpm test:e2e
+pnpm run check   # cargo check --manifest-path cli/Cargo.toml
+pnpm test        # cargo test  --manifest-path cli/Cargo.toml
+pnpm run build   # cargo build --manifest-path cli/Cargo.toml
+pnpm run fmt     # cargo fmt   --manifest-path cli/Cargo.toml
 ```
+
+Run `cargo fmt`, `cargo check`, `cargo test`, and `cargo build` after meaningful changes.
 
 ### Version Bumping
+
 ```bash
-# Bump patch version (0.6.2 → 0.6.3)
-pnpm run version:patch
-
-# Bump minor version (0.6.2 → 0.7.0)
-pnpm run version:minor
-
-# Bump major version (0.6.2 → 1.0.0)
-pnpm run version:major
+pnpm run version:patch   # 2.1.0 → 2.1.1
+pnpm run version:minor   # 2.1.0 → 2.2.0
+pnpm run version:major   # 2.1.0 → 3.0.0
 ```
-- Script updates: package.json, Cargo.toml, Cargo.lock, tauri.conf.json, CHANGELOG.md
-- Auto-creates git commit with template CHANGELOG entry
-- See [docs/VERSION_BUMP.md](docs/VERSION_BUMP.md) for full guide
 
-### Adding Tauri Commands
-1. Define function in [commands.rs](src-tauri/src/commands.rs) with `#[tauri::command]`
-2. Add to `invoke_handler![]` in [lib.rs](src-tauri/src/lib.rs#L34-L51)
-3. Call from React: `await invoke('command_name', { params })`
+The script updates `package.json`, `cli/Cargo.toml`, `cli/Cargo.lock`, and (unless skipped) `CHANGELOG.md`.
 
-## Project Conventions
+## CLI Direction
 
-### File Organization
-- **Frontend**: Feature-based components in `src/components/`, shared logic in `src/lib/`
-- **Backend**: Module-based structure in `src-tauri/src/` (ssh, session_manager, commands, websocket_server)
-- **Config Files**: Root level (tailwind.config.js, vite.config.ts, tsconfig.json)
+`r-shell` is a focused, scriptable command-line tool:
 
-### Naming Patterns
-- React components: PascalCase with descriptive names (e.g., `PtyTerminal`, `SessionManager`)
-- Tauri commands: snake_case (e.g., `ssh_connect`, `list_files`)
-- Rust structs: PascalCase, modules: snake_case
+- Subcommands map to single responsibilities (`connections`, `exec`, `shell`, `ls`, `upload`, `download`, `stats`, `mcp`).
+- A remote target is either a saved connection (`-c <id|name>`) or ad-hoc `--host`/`--user` flags.
+- Prefer plain, greppable output; offer `--json` where structured output helps.
+- One-shot commands connect, run, and disconnect within a single invocation; `shell` uses crossterm raw mode for an interactive PTY.
 
-### Type Safety
-- All React components use TypeScript interfaces for props
-- Rust uses `serde` for JSON serialization between frontend/backend
-- Shared types defined in both Rust (structs) and TypeScript (interfaces)
+## Conventions
 
-### Styling
-- **Tailwind CSS** with custom theme in [tailwind.config.js](tailwind.config.js)
-- Global styles in [index.css](src/index.css) and [globals.css](src/styles/globals.css)
-- Component-specific styles use `cn()` utility from [utils.ts](src/lib/utils.ts) for conditional classes
-- Color scheme uses CSS variables (supports dark/light themes via `next-themes`)
+- Prefer small, focused Rust modules.
+- Rust structs/enums: PascalCase; modules and functions: snake_case.
+- Use `anyhow::Result<T>` for fallible operations.
+- Serialize persisted models with `serde`.
+- Keep the application CLI-only — do not reintroduce web or Tauri layers.
 
-## Critical Knowledge
+## Security
 
-### Session Restoration
-On app startup, [App.tsx](src/App.tsx) restores sessions from localStorage and reconnects in sequence with progress tracking. Failed reconnections show toasts but don't block others. See `ActiveSessionsManager.getActiveSessions()` in [session-storage.ts](src/lib/session-storage.ts).
-
-### PTY vs Command Execution
-- **Interactive shells** (vim, htop, less): Use [pty-terminal.tsx](src/components/pty-terminal.tsx) with WebSocket
-- **One-shot commands**: Use [terminal.tsx](src/components/terminal.tsx) with `ssh_execute_command` Tauri command
-- PTY supports resize events (`cols`, `rows`) and flow control (Pause/Resume like ttyd)
-
-### Error Handling
-- Rust: Use `anyhow::Result<T>` for commands, return `Result<Response, String>` to Tauri
-- React: Use `toast.error()` from `sonner` library for user-facing errors
-- Connection failures trigger cancellation token cleanup in SessionManager
-
-### Keyboard Shortcuts
-Managed via [keyboard-shortcuts.ts](src/lib/keyboard-shortcuts.ts) with event listener cleanup. Layout shortcuts created in [App.tsx](src/App.tsx) using `createLayoutShortcuts()`.
-
-## Dependencies to Know
-- **Frontend**: xterm.js (terminal), Radix UI (components), react-hook-form (forms), recharts (monitoring charts)
-- **Backend**: russh/russh_sftp (SSH), tokio-tungstenite (WebSocket), sysinfo (system stats)
-- **Build**: pnpm (package manager), Vite (bundler), Tauri CLI (desktop builds)
-
-## Common Tasks
-
-### Adding a New Panel
-1. Create component in `src/components/`
-2. Add to [layout-config.ts](src/lib/layout-config.ts) presets if needed
-3. Use `ResizablePanel` with storage key in [App.tsx](src/App.tsx)
-
-### Adding System Commands
-1. Add Rust command in [commands.rs](src-tauri/src/commands.rs)
-2. Execute via SSH session from SessionManager
-3. Parse output in Rust, return typed struct
-4. Invoke from React component and handle response
-
-### Debugging
-- Frontend: React DevTools + browser console (Vite HMR active)
-- Backend: Check terminal logs (tracing initialized in [lib.rs](src-tauri/src/lib.rs#L13))
-- WebSocket: Monitor messages in browser Network tab (ws://127.0.0.1:9001)
+- Never print or return passwords, private keys, or passphrases.
+- Bind the MCP endpoint to localhost only unless a change explicitly updates the security model.
+- Avoid logging sensitive connection configuration.

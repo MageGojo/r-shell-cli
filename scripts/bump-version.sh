@@ -1,53 +1,37 @@
 #!/bin/bash
 
-# R-Shell Version Bump Script
-# Usage: ./scripts/bump-version.sh [major|minor|patch] [--no-commit]
-#
-# This script bumps the version across all project files:
-# - package.json
-# - src-tauri/Cargo.toml
-# - src-tauri/tauri.conf.json
-# - CHANGELOG.md
+# R-Shell CLI version bump script.
+# Usage: ./scripts/bump-version.sh [major|minor|patch] [--no-commit] [--skip-changelog]
 
 set -e
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Default values
 BUMP_TYPE="${1:-patch}"
 NO_COMMIT=false
 SKIP_CHANGELOG=false
 
-# Parse arguments
 for arg in "$@"; do
   case $arg in
     --no-commit)
       NO_COMMIT=true
-      shift
       ;;
     --skip-changelog)
       SKIP_CHANGELOG=true
-      shift
       ;;
   esac
 done
 
-# Validate bump type
 if [[ ! "$BUMP_TYPE" =~ ^(major|minor|patch)$ ]]; then
-  echo -e "${RED}Error: Invalid bump type '$BUMP_TYPE'. Use: major, minor, or patch${NC}"
+  echo -e "${RED}Invalid bump type '$BUMP_TYPE'. Use major, minor, or patch.${NC}"
   exit 1
 fi
 
-# Get current version from package.json
 CURRENT_VERSION=$(node -p "require('./package.json').version")
-echo -e "${BLUE}Current version: ${CURRENT_VERSION}${NC}"
-
-# Calculate new version
 IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
 MAJOR="${VERSION_PARTS[0]}"
 MINOR="${VERSION_PARTS[1]}"
@@ -69,9 +53,9 @@ case $BUMP_TYPE in
 esac
 
 NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+echo -e "${BLUE}Current version: ${CURRENT_VERSION}${NC}"
 echo -e "${GREEN}New version: ${NEW_VERSION}${NC}"
 
-# Confirmation
 read -p "Bump version from ${CURRENT_VERSION} to ${NEW_VERSION}? (y/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -79,53 +63,21 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
   exit 0
 fi
 
-# Update package.json
-echo -e "${BLUE}Updating package.json...${NC}"
+node -e "const fs=require('fs'); const p='package.json'; const pkg=JSON.parse(fs.readFileSync(p,'utf8')); pkg.version='${NEW_VERSION}'; fs.writeFileSync(p, JSON.stringify(pkg,null,2)+'\n');"
+
 if [[ "$OSTYPE" == "darwin"* ]]; then
-  # macOS
-  sed -i '' "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" package.json
+  sed -i '' "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" cli/Cargo.toml
 else
-  # Linux
-  sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" package.json
+  sed -i "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" cli/Cargo.toml
 fi
 
-# Update src-tauri/Cargo.toml
-echo -e "${BLUE}Updating src-tauri/Cargo.toml...${NC}"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-  sed -i '' "s/^version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" src-tauri/Cargo.toml
-else
-  sed -i "s/^version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" src-tauri/Cargo.toml
-fi
+(cd cli && cargo check --quiet) || echo -e "${YELLOW}Cargo check failed while updating lockfile; inspect manually before release.${NC}"
 
-# Update src-tauri/tauri.conf.json
-echo -e "${BLUE}Updating src-tauri/tauri.conf.json...${NC}"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-  sed -i '' "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" src-tauri/tauri.conf.json
-else
-  sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" src-tauri/tauri.conf.json
-fi
-
-# Update Cargo.lock by building
-echo -e "${BLUE}Updating src-tauri/Cargo.lock...${NC}"
-cd src-tauri
-cargo build --quiet 2>/dev/null || true
-cd ..
-
-# Update CHANGELOG.md
-if [ "$SKIP_CHANGELOG" = false ]; then
-  echo -e "${BLUE}Updating CHANGELOG.md...${NC}"
+if [ "$SKIP_CHANGELOG" = false ] && [ -f CHANGELOG.md ]; then
   CURRENT_DATE=$(date +%Y-%m-%d)
-  
-  # Create temporary file with new version section
   TEMP_FILE=$(mktemp)
-  
-  # Read CHANGELOG and insert new version section after "## [Unreleased]" section
   awk -v version="$NEW_VERSION" -v date="$CURRENT_DATE" '
-    /^## \[Unreleased\]/ { 
-      print
-      getline
-      print
-      getline
+    /^## \[Unreleased\]/ {
       print
       print ""
       print "## [" version "] - " date
@@ -145,40 +97,17 @@ if [ "$SKIP_CHANGELOG" = false ]; then
     }
     { print }
   ' CHANGELOG.md > "$TEMP_FILE"
-  
   mv "$TEMP_FILE" CHANGELOG.md
-  
-  echo -e "${YELLOW}⚠️  Please update CHANGELOG.md with actual changes before committing${NC}"
+  echo -e "${YELLOW}Update CHANGELOG.md with real release notes before committing.${NC}"
 fi
 
-# Create git commit
 if [ "$NO_COMMIT" = false ]; then
-  echo -e "${BLUE}Creating git commit...${NC}"
-  
-  git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
-  
-  if [ "$SKIP_CHANGELOG" = false ]; then
+  git add package.json cli/Cargo.toml cli/Cargo.lock
+  if [ "$SKIP_CHANGELOG" = false ] && [ -f CHANGELOG.md ]; then
     git add CHANGELOG.md
   fi
-  
-  COMMIT_MSG="chore: bump version to ${NEW_VERSION}"
-  
-  git commit -m "$COMMIT_MSG"
-  
-  echo -e "${GREEN}✓ Version bumped to ${NEW_VERSION} and committed${NC}"
-  echo -e "${YELLOW}Don't forget to:${NC}"
-  echo -e "  1. Update CHANGELOG.md with actual changes"
-  echo -e "  2. Run: git commit --amend (if needed)"
-  echo -e "  3. Create a git tag: git tag v${NEW_VERSION}"
-  echo -e "  4. Push changes: git push && git push --tags"
+  git commit -m "chore: bump version to ${NEW_VERSION}"
+  echo -e "${GREEN}Version bumped to ${NEW_VERSION} and committed.${NC}"
 else
-  echo -e "${GREEN}✓ Version bumped to ${NEW_VERSION}${NC}"
-  echo -e "${YELLOW}Files modified (not committed):${NC}"
-  echo -e "  - package.json"
-  echo -e "  - src-tauri/Cargo.toml"
-  echo -e "  - src-tauri/Cargo.lock"
-  echo -e "  - src-tauri/tauri.conf.json"
-  if [ "$SKIP_CHANGELOG" = false ]; then
-    echo -e "  - CHANGELOG.md"
-  fi
+  echo -e "${GREEN}Version bumped to ${NEW_VERSION}.${NC}"
 fi

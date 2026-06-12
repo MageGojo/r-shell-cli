@@ -1,378 +1,428 @@
-<div align="center">
+# R-Shell
 
-# R-Shell — Lightweight, Fast SSH Client for macOS, Windows & Linux
+**R-Shell** is a lightweight, scriptable **command-line SSH workspace** written in
+Rust. From a single `r-shell` binary you can manage saved SSH connections, run
+remote commands, open interactive shells, transfer files over SFTP, snapshot
+remote system stats, and run a local MCP server for AI tools. There is no
+graphical UI — everything is a fast, greppable command.
 
-[![GitHub license](https://img.shields.io/github/license/GOODBOY008/r-shell)](https://github.com/GOODBOY008/r-shell/blob/main/LICENSE)
-[![Test](https://github.com/GOODBOY008/r-shell/actions/workflows/test.yml/badge.svg)](https://github.com/GOODBOY008/r-shell/actions/workflows/test.yml)
-[![Release](https://github.com/GOODBOY008/r-shell/actions/workflows/release.yml/badge.svg)](https://github.com/GOODBOY008/r-shell/actions/workflows/release.yml)
-[![GitHub stars](https://img.shields.io/github/stars/GOODBOY008/r-shell)](https://github.com/GOODBOY008/r-shell/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/GOODBOY008/r-shell)](https://github.com/GOODBOY008/r-shell/issues)
-[![Tauri](https://img.shields.io/badge/Tauri-2.0-blue?logo=tauri)](https://tauri.app/)
-[![React](https://img.shields.io/badge/React-19-61dafb?logo=react)](https://react.dev/)
-[![Rust](https://img.shields.io/badge/Rust-Latest-orange?logo=rust)](https://www.rust-lang.org/)
-
-A modern, lightweight SSH/SFTP/FTP client built with Rust and Tauri 2. Uses ~98% less memory than FinalShell (~34 MB vs ~1.7 GB). Installer under 10 MB — 12× smaller.
-
-**Low memory** · **Native speed** · **Multi-protocol** · **Split terminals** · **SFTP file manager** · **GPU monitoring** · **Log viewer** · **Directory sync**
-
-[Why R-Shell?](#-why-r-shell) · [Features](#-features) · [Install](#-installation) · [Screenshots](#-screenshots) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
-
-</div>
-
----
-
-## 📸 Screenshots
-
-<div align="center">
-  <img src="screenshots/app-screenshot.png" alt="R-Shell Application Screenshot" width="100%">
-  <p><i>R-Shell — split terminals, file manager, and system monitor in a single window</i></p>
-</div>
-
----
-
-## 🚀 Why R-Shell?
-
-Most popular SSH clients (FinalShell, MobaXterm, Xshell) are built on Java or Electron, which means high memory usage even when idle. R-Shell is built with Rust + Tauri 2, delivering native performance with a fraction of the memory footprint.
-
-### Memory Comparison (Real-World Test)
-
-Both apps running side-by-side on macOS (Apple Silicon, 16 GB RAM), measured with macOS `footprint` (same metric as Activity Monitor):
-
-| App | Technology | Memory | Relative |
-|-----|-----------|--------|----------|
-| **R-Shell** | Rust + Tauri 2 | **~34 MB** | **1×** |
-| FinalShell | Java (Identifier: st) | **~1.7 GB** | **~50×** |
-
-> R-Shell uses approximately **98% less memory** than FinalShell — that's **~1.7 GB saved** for your IDE, browser, and Docker.
-
-### Installer Size Comparison
-
-| Platform | R-Shell | FinalShell | Savings |
-|----------|---------|-----------|---------|
-| **Windows** | **3.99 MB** | 64 MB | **~16×** smaller |
-| **macOS** | **8.13 MB** | 102 MB | **~12×** smaller |
-
-> No bundled JVM, no Chromium — Tauri uses the OS native webview, so the installer stays tiny.
-
-### Why does this matter?
-
-- Developers often keep SSH clients open all day alongside IDEs, browsers, and Docker
-- FinalShell alone can consume over 10% of a 16 GB machine's RAM while idle
-- Rust's zero-cost abstractions mean low memory without sacrificing features
-- No JVM startup overhead — R-Shell launches instantly
-
----
-
-## 🎯 About
-
-R-Shell is a free, open-source, cross-platform SSH client that combines an interactive terminal, a dual-panel file manager, real-time system & GPU monitoring, and log viewing — all in one VS Code-like workspace. Built with Rust for native performance and minimal resource usage, it's a lightweight alternative to FinalShell, MobaXterm, and Xshell.
-
-- 🚀 **Native Performance** — Tauri 2 + Rust backend, not Electron or Java. ~34 MB memory footprint vs FinalShell's ~1.7 GB.
-- 🎨 **AI-Generated Frontend** — The UI was generated from [Figma designs](https://www.figma.com/make/uUd7WO54vPnv03SmioKWqj/SSH-Client-Application)
-- 🤖 **AI-Assisted Development** — The entire codebase is built with **GitHub Copilot**
-- 🌍 **Cross-Platform** — macOS, Windows, and Linux
-
----
-
-## ✨ Features
-
-### 🔌 Multi-Protocol Connections
-| Protocol | Authentication | Description |
-|----------|---------------|-------------|
-| **SSH** | Password, Public Key (with passphrase) | Full interactive PTY terminal |
-| **SFTP** | Password, Public Key | Standalone file transfer sessions |
-| **FTP** | Password, Anonymous | Plain FTP file transfers |
-| **FTPS** | Password, Anonymous | FTP over TLS |
-
-- **Connection Manager** — Tree-view sidebar with folders, favorites, tags, drag-and-drop organization
-- **Connection Profiles** — Save, import/export (JSON), duplicate, edit saved connections
-- **Session Restore** — Automatically reconnects your previous workspace on launch
-- **Quick Connect** — Toolbar dropdown with recent connections
-- **Auto Reconnect** — Exponential backoff reconnection (up to 5 attempts)
-
-### 💻 Interactive PTY Terminal
-- **Full terminal emulation** via xterm.js v5 — supports vim, htop, top, less, and all interactive programs
-- **WebSocket streaming** — low-latency bidirectional I/O with flow control (inspired by ttyd)
-- **WebGL renderer** — hardware-accelerated rendering with automatic canvas fallback
-- **Terminal search** — regex and case-sensitive search with F3 navigation
-- **Context menu** — copy, paste, select all, clear, save to file, reconnect
-- **IME / CJK input** — full support for Chinese, Japanese, Korean input methods
-
-### 🪟 Split Panes & Tab Groups
-- **Split in 4 directions** — Up, Down, Left, Right
-- **Recursive grid layout** — unlimited nested splits with resizable panels
-- **Tab management** — add, close, duplicate, reorder (drag-and-drop), move between groups
-- **Drop zone overlay** — drag tabs onto 5 drop zones (up/down/left/right/center)
-- **Keyboard shortcuts** — Ctrl+\ split, Ctrl+1-9 focus group, Ctrl+Tab cycle tabs
-
-### 📁 Dual-Panel File Manager (FileZilla-style)
-- **Local + Remote panels** — side-by-side browsing with upload/download buttons
-- **Works over SSH, SFTP, FTP, and FTPS** — unified file operations across all protocols
-- **File operations** — create, rename, delete, copy files and directories
-- **Breadcrumb navigation** — editable address bar with click-to-navigate
-- **Sort & filter** — by name, size, date, permissions, owner (ascending/descending)
-- **Multi-select** — select multiple files for batch operations
-- **Transfer queue** — queued transfers with progress, speed, ETA, cancel, and retry
-- **Recursive directory transfer** — uploads/downloads entire directory trees
-
-### 🔄 Directory Synchronization
-- **4-step sync wizard** — Configure → Compare → Review → Sync
-- **Sync directions** — Local-to-Remote or Remote-to-Local
-- **Comparison criteria** — Size, Modified time, or both
-- **Diff preview** — per-item checkboxes with upload/download/delete/skip actions
-- **Exclude patterns** — skip `.git`, `node_modules`, `.DS_Store`, etc.
-
-### 📊 System Monitoring
-- **CPU** — real-time usage percentage with color-coded thresholds
-- **Memory & Swap** — total, used, free with percentage bars
-- **Disk** — per-mount filesystem usage with progress bars
-- **Uptime & Load Average** — at a glance
-- **Process Manager** — list processes sorted by CPU/MEM, kill with confirmation
-- **Real-time charts** — CPU history and memory area charts (Recharts)
-
-### 🎮 GPU Monitoring
-- **NVIDIA** (nvidia-smi) — utilization, memory, temperature, power, fan speed, encoder/decoder
-- **AMD** — GPU stats support
-- **Multi-GPU** — GPU selector with individual or "all" view
-- **History charts** — utilization, memory, temperature over time
-- **Temperature thresholds** — color-coded: green < 60°C, yellow < 75°C, orange < 85°C, red ≥ 85°C
-
-### 🌐 Network Monitoring
-- **Bandwidth** — per-interface rx/tx bytes per second
-- **Latency** — real-time network latency measurements
-- **Active connections** — protocol, local/remote address, state, PID
-- **Usage charts** — download/upload history
-
-### 📋 Log Monitoring
-- **Multi-source** — log files, journalctl services, Docker containers, custom paths
-- **Auto-discovery** — automatically finds available log sources on the remote host
-- **Level filtering** — ERROR, WARN, INFO, DEBUG, TRACE filter chips
-- **Regex search** — with match highlighting
-- **Live tail** — configurable refresh interval (1s – 30s)
-- **Line numbers + timestamps + level badges** — parsed from common log formats
-- **Download** — save log content locally
-
-### 🎨 Appearance & Customization
-- **10 terminal color themes** — VS Code Dark, Monokai, Solarized Dark/Light, Dracula, One Dark, Nord, Gruvbox Dark, Tokyo Night, Matrix
-- **Dark / Light / Auto** — application theme follows system preference
-- **7 font families** — Menlo, JetBrains Mono, Fira Code, Source Code Pro, Consolas, Monaco, Courier New
-- **Configurable** — font size, line height, letter spacing, cursor style (block/underline/bar), scrollback (1K–100K lines)
-- **Background images** — custom image with opacity, blur, and position controls
-- **Terminal transparency** — configurable opacity
-
-### ⌨️ Keyboard Shortcuts
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+B` | Toggle Connection Manager |
-| `Ctrl+J` | Toggle File Browser |
-| `Ctrl+M` | Toggle Monitor Panel |
-| `Ctrl+Z` | Toggle Zen Mode |
-| `Ctrl+\` | Split terminal right |
-| `Ctrl+Shift+\` | Split terminal down |
-| `Ctrl+1` – `9` | Focus terminal group |
-| `Ctrl+Shift+W` | Close active tab |
-| `Ctrl+Tab` | Next tab |
-| `Cmd/Ctrl+V` | Paste into terminal |
-| `Cmd/Ctrl+F` | Search in terminal |
-| `F3` / `Shift+F3` | Find next / previous |
-
-Layout shortcuts are ignored while the terminal input is focused, so terminal-native bindings such as tmux `Ctrl+B` still reach the shell.
-
-### 🔧 Additional Features
-- **VS Code-like layout** — resizable left/right sidebars + bottom panel with 5 layout presets (Default, Minimal, Focus, Full Stack, Zen)
-- **Auto-update** — check for updates with download progress and install-and-relaunch
-- **Menu bar** — File, Edit, Tools, Connection menus with full keyboard shortcuts
-- **Status bar** — active connection name, protocol badge, connection status indicator
-- **49 Tauri commands** — comprehensive Rust backend API
-
----
-
-## 🛠 Tech Stack
-
-### Backend — Why It's Lightweight
-- **Tauri 2** — native desktop framework, uses the OS webview instead of bundling Chromium (unlike Electron)
-- **Rust** — zero-cost abstractions, no garbage collector, no JVM — this is why R-Shell uses ~34 MB vs FinalShell's ~1.7 GB
-- **russh / russh-sftp** — pure Rust SSH & SFTP protocol implementation
-- **suppaftp** — FTP/FTPS client
-- **tokio** — async runtime with minimal overhead
-- **tokio-tungstenite** — WebSocket server for PTY streaming
-- **sysinfo** — system stats collection
-
-### Frontend
-- **React 19** + **TypeScript** — type-safe modern React
-- **Tailwind CSS** — utility-first styling
-- **Radix UI / shadcn/ui** — 48+ accessible component primitives
-- **xterm.js v5** — terminal emulation with WebGL, search, web-links, fit, overlay addons
-- **Recharts** — data visualization for monitoring
-- **React Hook Form** — form handling
-- **Lucide Icons** — icon set
-
----
-
-## 📦 Installation
-
-### 🍺 Homebrew (macOS — Recommended)
-
-```bash
-brew tap GOODBOY008/tap
-brew install --cask r-shell
+```text
+r-shell <command> [options]
 ```
 
-**Update:**
+---
 
-```bash
-brew upgrade --cask r-shell
-```
+## Table of Contents
 
-### 📥 Download Releases
-
-Download from the [Releases](https://github.com/GOODBOY008/r-shell/releases) page:
-
-| Platform | File |
-|----------|------|
-| macOS (Apple Silicon) | `r-shell_x.x.x_aarch64.dmg` |
-| macOS (Intel) | `r-shell_x.x.x_x64.dmg` |
-| Windows | `r-shell_x.x.x_x64-setup.exe` |
-| Linux | `r-shell_x.x.x_amd64.AppImage` / `.deb` |
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Connecting to a Host](#connecting-to-a-host)
+- [Command Reference](#command-reference)
+  - [`connections`](#connections--manage-saved-hosts)
+  - [`exec`](#exec--run-a-remote-command)
+  - [`shell`](#shell--interactive-terminal)
+  - [`ls`](#ls--list-a-remote-directory)
+  - [`upload` / `download`](#upload--download--sftp-transfer)
+  - [`stats`](#stats--remote-system-snapshot)
+  - [`mcp`](#mcp--run-the-mcp-server)
+- [Authentication](#authentication)
+- [Data & Configuration](#data--configuration)
+- [MCP Integration](#mcp-integration)
+- [Development](#development)
+- [Project Structure](#project-structure)
+- [Security](#security)
+- [License](#license)
 
 ---
 
-## 🚀 Development
+## Features
 
-### Prerequisites
+| Feature | Command |
+| --- | --- |
+| Manage saved SSH connections | `connections list/add/update/remove` |
+| Password & private-key auth | (all connecting commands) |
+| Run a single remote command | `exec` |
+| Interactive PTY shell | `shell` |
+| List a remote directory | `ls` |
+| Upload a file over SFTP | `upload` |
+| Download a file over SFTP | `download` |
+| Remote system resource snapshot | `stats` |
+| Local MCP server for AI tools | `mcp` |
 
-- Node.js ≥ 18
-- pnpm
-- Rust & Cargo
+> **Note:** `ls` and `stats` target Linux hosts (they rely on GNU `ls` and the
+> `/proc` filesystem). `exec` runs any command on any POSIX host.
 
-### Quick Start
+---
+
+## Installation
+
+### From source
+
+Prerequisites: **Rust** and **Cargo** (and optionally **Node.js + pnpm** for the
+wrapper scripts).
 
 ```bash
-git clone https://github.com/GOODBOY008/r-shell.git
+git clone <repo-url>
 cd r-shell
-pnpm install
 
-# Web only
-pnpm dev
+# Build a release binary
+cargo build --release --manifest-path cli/Cargo.toml
 
-# Desktop with Tauri
-pnpm tauri dev
+# The binary is produced at:
+#   cli/target/release/r-shell
 ```
 
-### Build for Production
+Copy `cli/target/release/r-shell` somewhere on your `PATH` (e.g.
+`/usr/local/bin`) to use `r-shell` directly. The examples below assume it is on
+your `PATH`; otherwise run it through Cargo:
 
 ```bash
-pnpm build && pnpm tauri build
-```
-
-### Testing
-
-```bash
-pnpm test          # Frontend (Vitest)
-cd src-tauri && cargo test  # Rust
-pnpm test:e2e      # E2E
-```
-
-### Version Bumping
-
-```bash
-pnpm run version:patch   # 1.0.0 → 1.0.1
-pnpm run version:minor   # 1.0.0 → 1.1.0
-pnpm run version:major   # 1.0.0 → 2.0.0
+cargo run --manifest-path cli/Cargo.toml -- <command> [options]
 ```
 
 ---
 
-## 📁 Project Structure
+## Quick Start
 
+```bash
+# 1. Save a connection
+r-shell connections add --name prod --host 203.0.113.10 --username deploy \
+  --auth publickey --key-path ~/.ssh/id_ed25519
+
+# 2. List saved connections
+r-shell connections list
+
+# 3. Run a command on it
+r-shell exec -c prod -- uptime
+
+# 4. Open an interactive shell
+r-shell shell -c prod
+
+# 5. Copy a file up and back down
+r-shell upload   -c prod ./app.tar.gz /tmp/app.tar.gz
+r-shell download -c prod /tmp/app.tar.gz ./app-copy.tar.gz
 ```
+
+---
+
+## Connecting to a Host
+
+Every command that talks to a remote host accepts a **target**, specified one of
+two ways:
+
+**1. Saved connection** — reference a previously saved connection by id or name:
+
+```bash
+r-shell exec -c prod -- whoami
+r-shell exec --connection ssh-1781247286839 -- whoami
+```
+
+**2. Ad-hoc host** — pass connection details inline:
+
+```bash
+r-shell exec --host 203.0.113.10 --user deploy --port 22 -- whoami
+```
+
+If a password is required but not provided, R-Shell prompts for it securely
+(input is not echoed).
+
+Common target flags (available on `exec`, `shell`, `ls`, `upload`, `download`,
+`stats`):
+
+| Flag | Alias | Description | Default |
+| --- | --- | --- | --- |
+| `--connection <id\|name>` | `-c` | Use a saved connection | — |
+| `--host <host>` | | Ad-hoc host (IP or hostname) | — |
+| `--user <user>` | `-u` | Ad-hoc SSH username | — |
+| `--port <port>` | `-p` | Ad-hoc SSH port | `22` |
+| `--password <pw>` | | Ad-hoc password (prefer the prompt) | — |
+| `--key-path <path>` | | Ad-hoc private key path | — |
+| `--passphrase <pp>` | | Passphrase for an encrypted key | — |
+| `--insecure` | | Skip host-key verification (dangerous) | `false` |
+
+---
+
+## Command Reference
+
+Run `r-shell --help` or `r-shell <command> --help` at any time.
+
+### `connections` — manage saved hosts
+
+Saved connections live in a local `workspace.json` (see
+[Data & Configuration](#data--configuration)).
+
+```bash
+# List (table or JSON)
+r-shell connections list
+r-shell connections list --json
+
+# Add (password auth)
+r-shell connections add \
+  --name prod \
+  --host 203.0.113.10 \
+  --username deploy \
+  --port 22 \
+  --auth password \
+  --password 's3cret' \
+  --folder Work \
+  --description "Production web server"
+
+# Add (public-key auth)
+r-shell connections add \
+  --name prod \
+  --host 203.0.113.10 \
+  --username deploy \
+  --auth publickey \
+  --key-path ~/.ssh/id_ed25519 \
+  --passphrase 'key-passphrase'
+
+# Update individual fields
+r-shell connections update <connection_id> --port 2222 --folder Staging
+
+# Remove
+r-shell connections remove <connection_id>
+```
+
+`connections add` flags: `--name`, `--host`, `--username` (required); `--port`
+(default `22`); `--auth password|publickey` (default `password`); `--password`,
+`--key-path`, `--passphrase`; `--folder` (default `All Connections`);
+`--description`.
+
+`connections update` takes a `<connection_id>` plus any of the same flags to
+change just those fields.
+
+### `exec` — run a remote command
+
+Runs a single command and prints its output. Everything after `--` is sent to the
+remote host verbatim.
+
+```bash
+r-shell exec -c prod -- uname -a
+r-shell exec -c prod -- "ls -la /var/www && df -h"
+r-shell exec --host 203.0.113.10 --user deploy -- systemctl status nginx
+```
+
+### `shell` — interactive terminal
+
+Opens a full interactive PTY shell (supports `vim`, `htop`, `less`, etc.) using
+raw terminal mode.
+
+```bash
+r-shell shell -c prod
+```
+
+Press **`Ctrl-]`** to force-quit the local shell loop.
+
+### `ls` — list a remote directory
+
+```bash
+r-shell ls -c prod /var/log
+r-shell ls -c prod /var/log --json
+r-shell ls -c prod            # defaults to the home/current directory
+```
+
+Output columns: kind (`DIR`/`FILE`/`LNK`), permissions, size, modified time,
+name. _(Linux hosts.)_
+
+### `upload` / `download` — SFTP transfer
+
+Single-file transfers over SFTP.
+
+```bash
+# Local -> remote
+r-shell upload -c prod ./local.tar.gz /tmp/remote.tar.gz
+
+# Remote -> local
+r-shell download -c prod /tmp/remote.log ./local.log
+```
+
+### `stats` — remote system snapshot
+
+Takes two quick samples and prints CPU %, load, memory, swap, disk usage, and
+network throughput. _(Linux hosts; relies on `/proc`.)_
+
+```bash
+r-shell stats -c prod
+```
+
+Example output:
+
+```text
+OS:      Linux 6.1.0
+Uptime:  12d 4h 31m
+CPU:     7.4%  (8 cores, load 0.42)
+Memory:  61.2%  (4.9/7.8 GB)
+Disk:    40.0%  (3.8/9.5 GB)
+Network: down 1.5 KB/s  up 320 B/s
+```
+
+### `mcp` — run the MCP server
+
+Starts a local **MCP (Model Context Protocol)** Streamable HTTP server so AI tools
+can manage your saved connections. Bound to localhost only.
+
+```bash
+r-shell mcp
+# R-Shell MCP server listening on http://127.0.0.1:9123/mcp
+# Press Ctrl-C to stop.
+```
+
+---
+
+## Authentication
+
+R-Shell supports two methods:
+
+- **Password** — `--auth password` with `--password`, or omit it and you will be
+  prompted securely at connect time.
+- **Public key** — `--auth publickey` with `--key-path` (and `--passphrase` for
+  encrypted keys). Paths beginning with `~/` are expanded.
+
+For saved connections, the auth method and any stored secrets are read from
+`workspace.json`. If a saved password-auth connection has no stored password,
+R-Shell prompts for it when you connect.
+
+### Host-key verification
+
+R-Shell verifies server host keys against your standard `~/.ssh/known_hosts`
+file, using **trust-on-first-use (TOFU)**:
+
+- **First connection** to a host: its key is recorded in `known_hosts` and the
+  connection proceeds.
+- **Subsequent connections**: the key must match the recorded one.
+- **Key mismatch**: the connection is **refused** — this is the signal of a
+  possible man-in-the-middle attack. To accept a legitimate change, remove the
+  offending line from `~/.ssh/known_hosts` and reconnect.
+
+Pass `--insecure` to skip host-key verification entirely. This disables MITM
+protection and should only be used for throwaway or local test hosts.
+
+---
+
+## Data & Configuration
+
+Saved connections are persisted as JSON at:
+
+```text
+<local data dir>/r-shell/workspace.json
+```
+
+The `<local data dir>` is platform-specific:
+
+| OS | Path |
+| --- | --- |
+| macOS | `~/Library/Application Support/r-shell/workspace.json` |
+| Linux | `~/.local/share/r-shell/workspace.json` |
+| Windows | `%LOCALAPPDATA%\r-shell\workspace.json` |
+
+This file is compatible with workspaces created by earlier R-Shell versions.
+
+---
+
+## MCP Integration
+
+The MCP server exposes these tools (credentials are never returned):
+
+| Tool | Description |
+| --- | --- |
+| `r_shell_ssh_connections_list` | List saved connections (sanitized) |
+| `r_shell_ssh_connection_create` | Create a saved connection |
+| `r_shell_ssh_connection_update` | Update a saved connection |
+| `r_shell_ssh_connection_delete` | Delete a saved connection |
+| `r_shell_ssh_tabs_list` | List open tabs (always empty in the CLI) |
+
+Start it with `r-shell mcp`, then point an MCP client at
+`http://127.0.0.1:9123/mcp`. For example, a Cursor / Claude-style MCP config:
+
+```json
+{
+  "mcpServers": {
+    "r-shell": {
+      "url": "http://127.0.0.1:9123/mcp"
+    }
+  }
+}
+```
+
+The server only accepts requests whose `Host` header is loopback (`localhost`,
+`127.0.0.1`, `[::1]`); if an `Origin` header is present it must also be loopback.
+Cross-site origins, the literal `null` origin, and rebound hostnames receive
+`403 Forbidden`.
+
+---
+
+## Development
+
+The root `package.json` is a thin wrapper around Cargo:
+
+```bash
+pnpm dev          # cargo run   (shows --help)
+pnpm run check    # cargo check
+pnpm test         # cargo test
+pnpm run build    # cargo build
+pnpm run fmt      # cargo fmt
+```
+
+Equivalent direct Cargo commands:
+
+```bash
+cargo run   --manifest-path cli/Cargo.toml -- --help
+cargo check --manifest-path cli/Cargo.toml
+cargo test  --manifest-path cli/Cargo.toml
+cargo build --manifest-path cli/Cargo.toml
+```
+
+### Version bumping
+
+```bash
+pnpm run version:patch
+pnpm run version:minor
+pnpm run version:major
+```
+
+These update `package.json`, `cli/Cargo.toml`, `cli/Cargo.lock`, and
+(unless skipped) `CHANGELOG.md`.
+
+---
+
+## Project Structure
+
+```text
 r-shell/
-├── src/
-│   ├── components/           # React components
-│   │   ├── ui/               # 48+ shadcn/ui primitives
-│   │   ├── terminal/         # Split panes, tab groups, grid renderer
-│   │   ├── pty-terminal.tsx   # PTY terminal (WebSocket + xterm.js)
-│   │   ├── connection-*.tsx   # Connection dialog, manager, tabs
-│   │   ├── file-*.tsx         # File browser, panels
-│   │   ├── sftp-panel.tsx     # Dual-panel SFTP manager
-│   │   ├── sync-dialog.tsx    # Directory synchronization
-│   │   ├── transfer-*.tsx     # Transfer queue & controls
-│   │   ├── system-monitor.tsx # CPU/MEM/Disk/GPU monitor
-│   │   ├── network-monitor.tsx# Network stats
-│   │   ├── log-monitor.tsx    # Multi-source log viewer
-│   │   └── settings-modal.tsx # 6-tab settings
-│   ├── lib/                   # State management & utilities
-│   └── styles/                # Global CSS
-├── src-tauri/                 # Tauri / Rust backend
+├── cli/                   # the CLI crate (binary name: r-shell)
+│   ├── Cargo.toml
 │   └── src/
-│       ├── ssh/               # SSH/SFTP implementation
-│       ├── ftp_client.rs      # FTP/FTPS client
-│       ├── commands.rs        # 49 Tauri commands
-│       ├── websocket_server.rs# PTY WebSocket streaming
-│       └── connection_manager.rs # Thread-safe session lifecycle
-└── docs/                      # Documentation
+│       ├── main.rs             # CLI entry, clap commands, output formatting
+│       ├── model.rs            # persisted workspace & connection models
+│       ├── storage.rs          # local workspace persistence (workspace.json)
+│       ├── ssh.rs              # SSH, PTY, SFTP implementation (russh)
+│       ├── ssh/tests.rs        # SSH / key handling tests
+│       ├── native_backend.rs   # connection manager
+│       ├── monitor.rs          # remote system resource monitor
+│       └── mcp.rs              # local MCP Streamable HTTP server
+├── scripts/                    # version bump helpers
+└── package.json                # thin command wrapper around Cargo
 ```
 
 ---
 
-## 🤝 Contributing
+## Security
 
-We welcome contributions! This project is an experiment in AI-assisted development.
-
-**Quick Links:**
-- [Contributing Guidelines](CONTRIBUTING.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Version Bump Guide](docs/VERSION_BUMP.md)
-- [Layout Guide](LAYOUT_GUIDE.md)
-- [Quick Start](QUICKSTART.md)
-
-### How to Contribute
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit (`git commit -m 'feat: add amazing feature'`)
-4. Push (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Areas We Need Help
-
-- 🐛 Bug fixes and issue reports
-- 📝 Documentation improvements
-- ✨ Feature enhancements
-- 🧪 Test coverage
-- 🌐 Internationalization (i18n)
-- 🎨 UI/UX improvements
+- Server host keys are verified against `~/.ssh/known_hosts` (trust-on-first-use);
+  a changed key aborts the connection unless `--insecure` is passed.
+- Passwords, private keys, and passphrases are **never** printed or returned by
+  MCP calls — list responses only expose `has_password` / `has_private_key_path`
+  booleans.
+- Password prompts do not echo input.
+- `workspace.json` and its directory are created with owner-only permissions
+  (`0600` / `0700` on Unix) so other local users cannot read stored credentials.
+- The MCP endpoint binds to **localhost only**. Requests must carry a loopback
+  `Host` header (defeating DNS-rebinding) and, if an `Origin` is present, it must
+  be a loopback origin. A `null` or cross-site `Origin` is rejected.
 
 ---
 
-## 📄 License
+## License
 
-MIT — see [LICENSE](LICENSE).
-
-## 🌟 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=GOODBOY008/r-shell&type=Date)](https://star-history.com/#GOODBOY008/r-shell&Date)
-
-## 💬 Community
-
-- [Issues](https://github.com/GOODBOY008/r-shell/issues)
-- [Discussions](https://github.com/GOODBOY008/r-shell/discussions)
-- [Pull Requests](https://github.com/GOODBOY008/r-shell/pulls)
-
-## 🙏 Acknowledgments
-
-- [shadcn/ui](https://ui.shadcn.com/) — UI components
-- [Figma Make](https://www.figma.com/make/) — Design generation
-- [Lucide](https://lucide.dev/) — Icons
-- [GitHub Copilot](https://github.com/features/copilot) — AI pair programming
-
----
-
-<div align="center">
-
-**Made with ❤️ and 🤖 AI**
-
-If you like this project, please give it a ⭐!
-
-</div>
-
+MIT. See [LICENSE](LICENSE).

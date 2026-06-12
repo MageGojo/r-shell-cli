@@ -15,13 +15,13 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
+            target: aarch64-apple-darwin
           - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
+            target: x86_64-apple-darwin
           - platform: ubuntu-latest
-            args: ''
+            target: x86_64-unknown-linux-gnu
           - platform: windows-latest
-            args: ''
+            target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
 
@@ -29,60 +29,54 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: './cli -> target'
 
-      - name: Install dependencies (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          brew install pkg-config
-
-      - name: Install dependencies (Linux)
+      - name: Install build dependencies (Linux)
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          sudo apt-get install -y build-essential pkg-config libssl-dev
 
-      - name: Install frontend dependencies
-        run: pnpm install
+      - name: Build release binary
+        working-directory: cli
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build the app
-        uses: tauri-apps/tauri-action@v0
+      - name: Package binary (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          BIN_DIR="cli/target/${{ matrix.target }}/release"
+          ARCHIVE="r-shell-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          tar -czvf "$ARCHIVE" -C "$BIN_DIR" r-shell
+          echo "ASSET=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Package binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $BinDir = "cli/target/${{ matrix.target }}/release"
+          $Archive = "r-shell-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path "$BinDir/r-shell.exe" -DestinationPath $Archive
+          "ASSET=$Archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'r-shell ${{ github.ref_name }}'
+          body: 'See the assets to download this version.'
+          draft: false
+          prerelease: false
+          files: ${{ env.ASSET }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'r-shell ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
-          args: ${{ matrix.args }}
 
   # Generate SHA256 checksums for Homebrew
   generate-checksums:
@@ -99,7 +93,7 @@ jobs:
         uses: robinraju/release-downloader@v1.11
         with:
           tag: ${{ github.ref_name }}
-          fileName: '*.dmg'
+          fileName: '*.tar.gz'
           out-file-path: assets
 
       - name: Generate SHA256 checksums
@@ -107,7 +101,7 @@ jobs:
           cd assets
           echo "# SHA256 Checksums for r-shell ${{ github.ref_name }}" > checksums.txt
           echo "" >> checksums.txt
-          for f in *.dmg; do
+          for f in *.tar.gz; do
             if [ -f "$f" ]; then
               sha256sum "$f" | tee -a checksums.txt
             fi

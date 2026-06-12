@@ -32,11 +32,10 @@ Ask (or infer from the argument) whether this is a `patch`, `minor`, or `major` 
 pnpm run version:<type>
 ```
 
-This updates **all four** version locations atomically and creates a git commit:
+This updates **all** version locations atomically and creates a git commit:
 - `package.json`
-- `src-tauri/Cargo.toml`
-- `src-tauri/Cargo.lock`
-- `src-tauri/tauri.conf.json`
+- `cli/Cargo.toml`
+- `cli/Cargo.lock`
 - `CHANGELOG.md` (adds a skeleton section)
 
 Read the new version from `package.json`:
@@ -125,7 +124,7 @@ Check the output includes the release body text (not just "See the assets…"). 
 
 - **Changelog already accurate?** Skip step 3 and the amend.
 - **Want to publish immediately instead of drafting?** Drop `--draft` in step 6.
-- **Attaching build artifacts?** Add file paths after the tag in `gh release create`: `gh release create "v${VERSION}" ./dist/*.dmg ./dist/*.exe --draft ...`
+- **Attaching build artifacts?** The Release workflow builds and uploads platform archives automatically. To attach them manually, add file paths after the tag in `gh release create`: `gh release create "v${VERSION}" ./r-shell-*.tar.gz ./r-shell-*.zip --draft ...`
 - **Pre-release?** Append `--prerelease` to the `gh release create` command.
 
 ## Prerequisites

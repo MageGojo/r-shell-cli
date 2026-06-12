@@ -93,13 +93,15 @@ humans. In short:
 
 ## R-Shell for AI Assistants (MCP)
 
+**中文关键词｜AI 助手 SSH 工具 · MCP 服务器 · 让 Cursor / Claude 操作远程服务器 · AI 运维 · AI 连接服务器 · 大模型远程命令执行**
+
 R-Shell is built **AI-first**: its primary job is to let AI coding agents operate
 remote servers safely. Instead of an agent spawning raw `ssh`/`scp` subprocesses
 and re-authenticating on every step, R-Shell exposes a small set of **named,
 sandboxed tools over the Model Context Protocol (MCP)** and keeps a single SSH
 session alive between calls.
 
-### Why agents should use R-Shell instead of raw `ssh`
+### Why agents should use R-Shell instead of raw `ssh` ｜为什么 AI 智能体该用 R-Shell 而非裸 `ssh`
 
 - **One persistent session** — open it once with `ssh_session_open`, then reuse it
   for every command and file edit. No reconnect storms, no repeated auth prompts.
@@ -113,7 +115,7 @@ session alive between calls.
 - **Fewer false alarms** — reusing one connection avoids the rapid repeated
   logins that can trip server-side intrusion detection (e.g. fail2ban).
 
-### 1-minute setup for Cursor / Claude
+### 1-minute setup for Cursor / Claude ｜Cursor / Claude 一分钟接入配置
 
 **Step 1 — start the server:**
 
@@ -149,7 +151,7 @@ once a connection is saved (or given inline):
 - *“Deploy: upload `./build.tar.gz` to `/tmp` on `prod`, extract it to
   `/opt/app`, and restart the service.”*
 
-### Tools available to AI agents
+### Tools available to AI agents ｜AI 智能体可调用的工具(MCP Tools)
 
 | Tool | What the agent can do |
 | --- | --- |
@@ -591,6 +593,8 @@ Network: down 1.5 KB/s  up 320 B/s
 
 ### `mcp` — run the MCP server
 
+_启动 MCP 服务器(供 AI 助手 / Cursor / Claude 连接)_
+
 Starts a local **MCP (Model Context Protocol)** Streamable HTTP server so AI tools
 can manage your saved connections. Bound to localhost only.
 
@@ -653,6 +657,8 @@ This file is compatible with workspaces created by earlier R-Shell versions.
 ---
 
 ## MCP Integration (AI Assistants)
+
+**中文关键词｜MCP 集成 · Model Context Protocol 服务器 · AI 助手对接 · Cursor / Claude Desktop 配置 · 持久 SSH 会话 · AI Agent 工具列表**
 
 **R-Shell ships a built-in MCP (Model Context Protocol) server**, so AI coding
 assistants — Cursor, Claude Desktop, and other MCP-compatible clients — can

@@ -37,9 +37,10 @@ if (Test-Path $vswhere) {
   if ($vs) {
     $redist = Join-Path $vs 'VC\Redist\MSVC'
     if (Test-Path $redist) {
-      $ver = Get-ChildItem $redist -Directory | Sort-Object Name -Descending | Select-Object -First 1
-      $crtDir = Get-ChildItem (Join-Path $ver.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT' |
-                Sort-Object Name -Descending | Select-Object -First 1
+      # 递归找 x64 下的 Microsoft.VC*.CRT(兼容不同版本目录命名;找不到不致命,回退 System32)
+      $crtDir = Get-ChildItem $redist -Recurse -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match '\\x64\\' } |
+                Sort-Object FullName -Descending | Select-Object -First 1
       if ($crtDir) { $crt = $crtDir.FullName }
     }
   }

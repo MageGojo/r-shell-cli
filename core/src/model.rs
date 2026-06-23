@@ -186,28 +186,13 @@ impl PersistedWorkspace {
 }
 
 impl Default for PersistedWorkspace {
+    /// A brand-new install starts with **no connections** — users add their own.
+    /// (Previously this seeded a demo host, which must never ship to end users.)
     fn default() -> Self {
-        let connection = SavedConnection {
-            id: "local-demo".to_string(),
-            name: "root@192.168.0.103:5555".to_string(),
-            host: "192.168.0.103".to_string(),
-            port: 5555,
-            username: "root".to_string(),
-            protocol: "SSH".to_string(),
-            folder: "Work".to_string(),
-            tags: Vec::new(),
-            description: "Imported from the current R-Shell workspace".to_string(),
-            auth_method: "password".to_string(),
-            password: None,
-            private_key_path: None,
-            passphrase: None,
-            status: ConnectionStatus::Disconnected,
-        };
-
         Self {
-            active_connection_id: Some(connection.id.clone()),
-            connections: vec![connection],
+            connections: Vec::new(),
             tabs: Vec::new(),
+            active_connection_id: None,
             active_tab_id: None,
         }
     }

@@ -66,3 +66,28 @@ Compress-Archive -Path (Join-Path $rel '*') -DestinationPath $zip -CompressionLe
 
 $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 Write-Host "ZIP_READY $zip ($size MB)"
+
+# 4) 生成 NSIS 安装器(装完即用:桌面/开始菜单快捷方式 + 注册卸载项;Release 自带运行时)
+$verLine = Select-String -Path (Join-Path $desktop 'pubspec.yaml') -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)'
+$ver = if ($verLine) { $verLine.Matches[0].Groups[1].Value } else { '1.0.0' }
+
+$makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+if (-not $makensis) {
+  foreach ($c in @((Join-Path $env:ProgramFiles 'NSIS\makensis.exe'),
+                   (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'))) {
+    if (Test-Path $c) { $makensis = $c; break }
+  }
+}
+if ($makensis) {
+  $nsi   = Join-Path $repo 'packaging\windows\conch-setup.nsi'
+  $icon  = Join-Path $repo 'desktop\windows\runner\resources\app_icon.ico'
+  $setup = Join-Path $dist 'Conch-windows-x64-setup.exe'
+  if (Test-Path $setup) { Remove-Item $setup -Force }
+  & $makensis "/DSTAGE_DIR=$rel" "/DOUTPUT_EXE=$setup" "/DICON_PATH=$icon" "/DAPP_VERSION=$ver" $nsi
+  if (Test-Path $setup) {
+    $ssize = [math]::Round((Get-Item $setup).Length / 1MB, 1)
+    Write-Host "SETUP_READY $setup ($ssize MB)"
+  } else { Write-Host 'SETUP_FAILED (makensis 未产出安装器)' }
+} else {
+  Write-Host 'NSIS 未安装,跳过安装器(可先 scoop install nsis)'
+}

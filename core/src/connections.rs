@@ -381,14 +381,16 @@ mod tests {
     #[test]
     fn remove_from_cleans_tabs_and_active_pointer() {
         let mut workspace = PersistedWorkspace::default();
-        let id = workspace.connections[0].id.clone();
+        let connection = build_connection(sample()).unwrap();
+        let id = connection.id.clone();
+        workspace.connections.push(connection);
+        workspace.active_connection_id = Some(id.clone());
         workspace.tabs.push(TerminalTab {
             id: "tab-1".to_string(),
             connection_id: id.clone(),
             title: "session".to_string(),
             status: ConnectionStatus::Disconnected,
         });
-        workspace.active_connection_id = Some(id.clone());
 
         let removed = remove_from(&mut workspace, &id).unwrap();
         assert_eq!(removed.id, id);

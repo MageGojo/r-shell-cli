@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- R-Shell is an SSH client: it must open outbound TCP to arbitrary hosts and
+	     read private keys / known_hosts from ~/.ssh. The macOS App Sandbox blocks
+	     both, so it is disabled (this app ships via DMG, not the Mac App Store). -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<!-- Kept for completeness if the sandbox is ever re-enabled. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>

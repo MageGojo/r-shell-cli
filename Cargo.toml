@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["core", "cli", "desktop/rust"]
+
+# Shared dependency versions for every workspace member. Individual crates opt in
+# with `dep = { workspace = true }` so the CLI and GUI never drift apart.
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+dirs = "6"
+rmcp = { version = "1.7", features = ["server", "schemars", "transport-streamable-http-server"] }
+russh = { version = "0.43", features = ["openssl", "vendored-openssl"] }
+russh-keys = { version = "0.43", features = ["vendored-openssl"] }
+russh-sftp = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 仅需 CPU/内存/磁盘/网络;关默认特性以剔除 macOS 上拉 OpenDirectory 框架的 `user`
+# 模块(否则 Flutter 静态链接缺 _ODNodeCreateWithName 等符号)。
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk", "network"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+tempfile = "3"

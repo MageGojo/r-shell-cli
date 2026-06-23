@@ -11,13 +11,6 @@
 //! - `stats`       — snapshot remote system resource usage
 //! - `mcp`         — run the local MCP server
 
-mod mcp;
-mod model;
-mod monitor;
-mod native_backend;
-mod ssh;
-mod storage;
-
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,8 +18,11 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
 
-use model::{ConnectionStatus, SavedConnection};
-use native_backend::{AuthMethod, NativeConnectionManager, RemoteFileEntry, SshConfig};
+use r_shell_core::model::SavedConnection;
+use r_shell_core::native_backend::{
+    AuthMethod, NativeConnectionManager, RemoteFileEntry, SshConfig,
+};
+use r_shell_core::{connections, mcp, monitor, storage};
 
 /// R-Shell — a command-line SSH workspace (connections, exec, shell, SFTP, MCP).
 #[derive(Parser, Debug)]
@@ -288,8 +284,8 @@ fn connections_list(args: ListArgs) -> Result<()> {
     }
 
     println!(
-        "{:<20}  {:<22}  {:<22}  {:<10}  {}",
-        "ID", "NAME", "HOST", "AUTH", "FOLDER"
+        "{:<20}  {:<22}  {:<22}  {:<10}  FOLDER",
+        "ID", "NAME", "HOST", "AUTH"
     );
     for connection in &workspace.connections {
         let host = format!(
@@ -309,131 +305,62 @@ fn connections_list(args: ListArgs) -> Result<()> {
 }
 
 fn connections_add(args: AddArgs) -> Result<()> {
-    let name = args.name.trim().to_string();
-    let host = args.host.trim().to_string();
-    let username = args.username.trim().to_string();
-    if name.is_empty() || host.is_empty() || username.is_empty() || args.port == 0 {
-        bail!("name, host, username, and a valid port are required");
-    }
-
-    let auth_method = match args.auth {
-        AuthKind::Password => "password",
-        AuthKind::Publickey => "publickey",
-    }
-    .to_string();
-
-    let folder = args.folder.trim();
-    let connection = SavedConnection {
-        id: SavedConnection::new_id(),
-        name,
-        host,
-        port: args.port,
-        username,
+    // Validation, trimming, folder defaulting, and persistence all live in
+    // `r_shell_core::connections` so the CLI and the desktop GUI stay in sync.
+    let connection = connections::add(connections::NewConnection {
         protocol: "SSH".to_string(),
-        folder: if folder.is_empty() {
-            "All Connections".to_string()
-        } else {
-            folder.to_string()
-        },
-        tags: Vec::new(),
+        name: args.name,
+        host: args.host,
+        username: args.username,
+        port: args.port,
+        auth_method: auth_kind_label(args.auth),
+        folder: args.folder,
         description: args.description,
-        auth_method,
-        password: args.password.filter(|value| !value.is_empty()),
-        private_key_path: args.key_path.filter(|value| !value.is_empty()),
-        passphrase: args.passphrase.filter(|value| !value.is_empty()),
-        status: ConnectionStatus::Disconnected,
-    };
+        tags: Vec::new(),
+        password: args.password,
+        private_key_path: args.key_path,
+        passphrase: args.passphrase,
+    })?;
 
-    let mut workspace = storage::load_workspace();
-    let id = connection.id.clone();
-    workspace.connections.push(connection);
-    workspace.active_connection_id = Some(id.clone());
-    storage::save_workspace(&workspace)?;
-
-    println!("Added connection {id}");
+    println!("Added connection {}", connection.id);
     Ok(())
 }
 
 fn connections_update(args: UpdateArgs) -> Result<()> {
-    let mut workspace = storage::load_workspace();
-    let connection = workspace
-        .connections
-        .iter_mut()
-        .find(|connection| connection.id == args.connection_id)
-        .ok_or_else(|| anyhow!("SSH connection not found: {}", args.connection_id))?;
+    let connection = connections::update(
+        &args.connection_id,
+        connections::ConnectionPatch {
+            protocol: None,
+            name: args.name,
+            host: args.host,
+            username: args.username,
+            port: args.port,
+            auth_method: args.auth.map(auth_kind_label),
+            folder: args.folder,
+            description: args.description,
+            tags: None,
+            password: args.password,
+            private_key_path: args.key_path,
+            passphrase: args.passphrase,
+        },
+    )?;
 
-    if let Some(name) = args.name.map(|value| value.trim().to_string()) {
-        if !name.is_empty() {
-            connection.name = name;
-        }
-    }
-    if let Some(host) = args.host.map(|value| value.trim().to_string()) {
-        if !host.is_empty() {
-            connection.host = host;
-        }
-    }
-    if let Some(username) = args.username.map(|value| value.trim().to_string()) {
-        if !username.is_empty() {
-            connection.username = username;
-        }
-    }
-    if let Some(port) = args.port {
-        if port == 0 {
-            bail!("port must be greater than 0");
-        }
-        connection.port = port;
-    }
-    if let Some(auth) = args.auth {
-        connection.auth_method = match auth {
-            AuthKind::Password => "password",
-            AuthKind::Publickey => "publickey",
-        }
-        .to_string();
-    }
-    if let Some(password) = args.password {
-        connection.password = (!password.is_empty()).then_some(password);
-    }
-    if let Some(key_path) = args.key_path {
-        connection.private_key_path = (!key_path.is_empty()).then_some(key_path);
-    }
-    if let Some(passphrase) = args.passphrase {
-        connection.passphrase = (!passphrase.is_empty()).then_some(passphrase);
-    }
-    if let Some(folder) = args.folder.map(|value| value.trim().to_string()) {
-        if !folder.is_empty() {
-            connection.folder = folder;
-        }
-    }
-    if let Some(description) = args.description {
-        connection.description = description;
-    }
-
-    let id = connection.id.clone();
-    storage::save_workspace(&workspace)?;
-    println!("Updated connection {id}");
+    println!("Updated connection {}", connection.id);
     Ok(())
 }
 
 fn connections_remove(args: RemoveArgs) -> Result<()> {
-    let mut workspace = storage::load_workspace();
-    let index = workspace
-        .connections
-        .iter()
-        .position(|connection| connection.id == args.connection_id)
-        .ok_or_else(|| anyhow!("SSH connection not found: {}", args.connection_id))?;
-
-    let removed = workspace.connections.remove(index);
-    workspace.tabs.retain(|tab| tab.connection_id != removed.id);
-    if workspace.active_connection_id.as_deref() == Some(removed.id.as_str()) {
-        workspace.active_connection_id = workspace
-            .connections
-            .first()
-            .map(|connection| connection.id.clone());
-    }
-    storage::save_workspace(&workspace)?;
-
+    let removed = connections::remove(&args.connection_id)?;
     println!("Removed connection {} ({})", removed.id, removed.name);
     Ok(())
+}
+
+fn auth_kind_label(auth: AuthKind) -> String {
+    match auth {
+        AuthKind::Password => "password",
+        AuthKind::Publickey => "publickey",
+    }
+    .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -608,12 +535,11 @@ async fn cmd_download(args: DownloadArgs) -> Result<()> {
 async fn cmd_stats(target: TargetArgs) -> Result<()> {
     with_connection(&target, |manager| async move {
         // Two snapshots a moment apart so CPU% and network rates can be derived.
-        let first_raw = manager.fetch_system_stats(CONNECTION_ID).await?;
-        let first = monitor::parse_snapshot(&first_raw);
+        // OS-aware: works on Linux (/proc) and Windows (PowerShell CIM) alike.
+        let first = manager.fetch_system_snapshot(CONNECTION_ID).await?;
         let started = Instant::now();
         tokio::time::sleep(Duration::from_millis(800)).await;
-        let second_raw = manager.fetch_system_stats(CONNECTION_ID).await?;
-        let second = monitor::parse_snapshot(&second_raw);
+        let second = manager.fetch_system_snapshot(CONNECTION_ID).await?;
         let elapsed = started.elapsed().as_secs_f64();
 
         let stats = monitor::SystemStats::from_samples(Some(&first), &second, elapsed);

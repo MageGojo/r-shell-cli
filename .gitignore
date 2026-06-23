@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 *.local
 target
+dist
 .qoder
 
 # Editor directories and files

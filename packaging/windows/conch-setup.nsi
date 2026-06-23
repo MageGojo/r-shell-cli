@@ -1,14 +1,18 @@
-; NSIS 安装器 — Conch 桌面版(Windows x64)。
+; NSIS installer for the Conch desktop app (Windows x64).
 ;
-; 打包整个 Flutter Release 目录(Conch.exe + flutter/rust DLL + 自带 VC++ 运行时 +
-; data/),装到 Program Files\Conch,建开始菜单/桌面快捷方式,注册卸载项。
-; 因为 Release 已自带运行时,装完「双击即用」,无需任何额外环境。
+; Packages the entire Flutter Release folder (Conch.exe + flutter/rust DLLs +
+; bundled VC++ runtime + data/) into Program Files\Conch, with Start Menu and
+; Desktop shortcuts and an uninstaller. Because the runtime is bundled, the
+; installed app runs on a clean machine with no extra prerequisites.
 ;
-; CI / 脚本通过 /D 传入:
-;   STAGE_DIR    含 Conch.exe 的 Release 目录(必填)
-;   OUTPUT_EXE   要产出的安装器完整路径
-;   ICON_PATH    安装器与卸载器图标(.ico,可选)
-;   APP_VERSION  版本号,如 1.0.0
+; Defines passed via /D by scripts/build_win.ps1:
+;   STAGE_DIR    the Release folder that contains Conch.exe (required)
+;   OUTPUT_EXE   full path of the installer to produce
+;   ICON_PATH    installer/uninstaller icon (.ico, optional)
+;   APP_VERSION  version string, e.g. 1.0.0
+;
+; NOTE: keep this file pure ASCII. NSIS reads non-BOM scripts as ANSI and will
+; abort with "Bad text encoding" on any UTF-8 multibyte characters.
 
 Unicode true
 SetCompressor /SOLID lzma
@@ -43,7 +47,7 @@ RequestExecutionLevel admin
 
 VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
-VIAddVersionKey "FileDescription" "${APP_NAME} — AI-native SSH/ADB terminal"
+VIAddVersionKey "FileDescription" "${APP_NAME} - AI-native SSH/ADB terminal"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"
 VIAddVersionKey "ProductVersion" "${APP_VERSION}"
 VIAddVersionKey "CompanyName" "${APP_PUBLISHER}"
@@ -54,18 +58,17 @@ VIAddVersionKey "LegalCopyright" "MIT License"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
-!define MUI_FINISHPAGE_RUN_TEXT "立即启动 ${APP_NAME}"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-!insertmacro MUI_LANGUAGE "SimpChinese"
 !insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "SimpChinese"
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  ; 递归打包整个 Release(含运行时 DLL 与 data/)。
+  ; Recursively pack the whole Release (runtime DLLs + data/ included).
   File /r "${STAGE_DIR}\*.*"
 
   WriteRegStr HKLM "Software\${APP_NAME}" "InstallDir" "$INSTDIR"

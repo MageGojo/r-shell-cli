@@ -1,8 +1,8 @@
-# R-Shell — 面向 AI 的命令行 SSH 客户端与 MCP 服务器(Rust 编写)
+# Conch — 面向 AI 的命令行 SSH 客户端与 MCP 服务器(Rust 编写)
 
 **English docs: [README.md](README.md)**
 
-> **R-Shell 是一款开源、AI 原生的 SSH 工具,专为「让 AI 助手安全地操作你的远程服务器」而生。**
+> **Conch 是一款开源、AI 原生的 SSH 工具,专为「让 AI 助手安全地操作你的远程服务器」而生。**
 > 它内置 **MCP(Model Context Protocol)服务器**,让 **Cursor、Claude、Claude Code** 等 AI 智能体
 > 能够打开持久 SSH 会话、运行远程命令、通过 SFTP 读写文件、列目录、查看系统状态 —— 全部通过一个
 > 仅监听本地回环(localhost)的安全端点完成。同一个 `r-shell` 二进制文件,对人类来说也是一个快速、
@@ -12,8 +12,8 @@
 > 直接可用的 Cursor / Claude 配置与示例指令见 [面向 AI 助手(MCP)](#面向-ai-助手mcp)。
 
 <p align="center">
-  <a href="https://github.com/MageGojo/r-shell-cli/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/MageGojo/r-shell-cli?label=download&sort=semver"></a>
-  <a href="https://github.com/MageGojo/r-shell-cli/actions/workflows/release.yml"><img alt="发布构建" src="https://img.shields.io/github/actions/workflow/status/MageGojo/r-shell-cli/release.yml?label=release%20build"></a>
+  <a href="https://github.com/MageGojo/conch/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/MageGojo/conch?label=download&sort=semver"></a>
+  <a href="https://github.com/MageGojo/conch/actions/workflows/release.yml"><img alt="发布构建" src="https://img.shields.io/github/actions/workflow/status/MageGojo/conch/release.yml?label=release%20build"></a>
   <img alt="平台" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue">
   <img alt="语言" src="https://img.shields.io/badge/built%20with-Rust-orange?logo=rust">
   <a href="#许可证"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -31,31 +31,31 @@ r-shell <命令> [选项]
 
 ---
 
-## R-Shell 是什么?(一分钟看懂)
+## Conch 是什么?(一分钟看懂)
 
-**R-Shell 是一款 AI 原生、用 Rust 编写的 SSH 工具。** 它的核心使命,是通过 **MCP(模型上下文协议)**
+**Conch 是一款 AI 原生、用 Rust 编写的 SSH 工具。** 它的核心使命,是通过 **MCP(模型上下文协议)**
 给 AI 助手提供一种安全、结构化的方式来操作远程服务器;同时它也是一个供人类使用的、快速可脚本化的
 SSH 客户端。简而言之:
 
 - **它是什么:** 一个 **面向 SSH 的 MCP 服务器**,外加一个单文件 SSH 客户端、SFTP 传输工具、远程系统监控。
 - **它为谁而做:** 使用 **AI 编程助手(Cursor、Claude、Claude Code)** 管理服务器的人,以及希望拥有
   可复现、可脚本化 SSH 工作流的开发者、DevOps/SRE 工程师、系统管理员。
-- **它为何存在:** AI 智能体不应该每一步都去 `ssh` 一次、反复认证。R-Shell 保持 **一个持久 SSH 会话**
+- **它为何存在:** AI 智能体不应该每一步都去 `ssh` 一次、反复认证。Conch 保持 **一个持久 SSH 会话**
   常驻,并暴露安全、具名的工具(`ssh_exec`、`ssh_read_file`、`ssh_write_file` 等),让智能体快速迭代,
   既不泄露凭据,也不会触发服务器端的入侵检测。
 - **它不是什么:** 它 **不是** 图形界面应用,也不是后台守护进程 —— 连接、干活、退出
   (`shell` 和 `mcp` 例外,它们会持续运行)。
 
-> **一句话:** *R-Shell 是 AI 原生的 SSH 工作区 —— 一个 MCP 服务器,让 AI 助手通过一条安全、持久的
+> **一句话:** *Conch 是 AI 原生的 SSH 工作区 —— 一个 MCP 服务器,让 AI 助手通过一条安全、持久的
 > 连接运行命令、编辑文件、管理远程服务器。*
 
 ---
 
 ## 目录
 
-- [R-Shell 是什么?(一分钟看懂)](#r-shell-是什么一分钟看懂)
+- [Conch 是什么?(一分钟看懂)](#r-shell-是什么一分钟看懂)
 - [面向 AI 助手(MCP)](#面向-ai-助手mcp)
-- [为什么选 R-Shell?(核心优势)](#为什么选-r-shell核心优势)
+- [为什么选 Conch?(核心优势)](#为什么选-r-shell核心优势)
 - [功能特性](#功能特性)
 - [下载与安装(预编译包)](#下载与安装预编译包)
   - [macOS — 从 `.dmg` 安装](#macos--从-dmg-安装)
@@ -79,11 +79,11 @@ SSH 客户端。简而言之:
 
 ## 面向 AI 助手(MCP)
 
-R-Shell 以 **AI 优先** 为设计核心:它的首要职责就是让 AI 编程智能体安全地操作远程服务器。与其让智能体
-反复 fork 出裸 `ssh`/`scp` 子进程、每一步都重新认证,R-Shell 通过 **模型上下文协议(MCP)暴露一组具名、
+Conch 以 **AI 优先** 为设计核心:它的首要职责就是让 AI 编程智能体安全地操作远程服务器。与其让智能体
+反复 fork 出裸 `ssh`/`scp` 子进程、每一步都重新认证,Conch 通过 **模型上下文协议(MCP)暴露一组具名、
 受控的工具**,并在多次调用之间保持同一个 SSH 会话常驻。
 
-### 为什么智能体应该用 R-Shell 而不是裸 `ssh`
+### 为什么智能体应该用 Conch 而不是裸 `ssh`
 
 - **一个持久会话** —— 用 `ssh_session_open` 打开一次,之后每条命令、每次文件编辑都复用它。没有重连风暴,
   没有重复认证弹窗。
@@ -100,7 +100,7 @@ R-Shell 以 **AI 优先** 为设计核心:它的首要职责就是让 AI 编程�
 
 ```bash
 r-shell mcp
-# R-Shell MCP server listening on http://127.0.0.1:9123/mcp
+# Conch MCP server listening on http://127.0.0.1:9123/mcp
 ```
 
 **第 2 步 —— 让 AI 客户端指向它。** Cursor(`~/.cursor/mcp.json`)或任意兼容 MCP 的客户端:
@@ -142,9 +142,9 @@ r-shell mcp
 
 ---
 
-## 为什么选 R-Shell?(核心优势)
+## 为什么选 Conch?(核心优势)
 
-| 如果你想…… | R-Shell 给你…… |
+| 如果你想…… | Conch 给你…… |
 | --- | --- |
 | **让 AI 智能体(Cursor/Claude)操作你的服务器** | **`r-shell mcp` —— 一个仅本地、带持久 SSH 会话的安全 MCP 服务器** |
 | 不再反复敲 `ssh user@host -p port -i key` | **已保存连接**,用短名引用(`-c prod`) |
@@ -177,7 +177,7 @@ r-shell mcp
 
 ## 下载与安装(预编译包)
 
-最简单的安装方式,是从 **[GitHub Releases 页面](https://github.com/MageGojo/r-shell-cli/releases/latest)**
+最简单的安装方式,是从 **[GitHub Releases 页面](https://github.com/MageGojo/conch/releases/latest)**
 下载预编译包。每个打了 tag 的版本都由 CI 自动构建,提供三个下载:
 
 | 平台 | 下载文件 | 你会得到 |
@@ -193,14 +193,14 @@ r-shell mcp
 
 **分步操作:**
 
-1. 从[最新版本](https://github.com/MageGojo/r-shell-cli/releases/latest)下载
+1. 从[最新版本](https://github.com/MageGojo/conch/releases/latest)下载
    `r-shell-macos-apple-silicon.dmg`(Apple Silicon)或 `r-shell-macos-intel.dmg`(Intel)。
 2. **双击 `.dmg`** 挂载。Finder 会打开一个窗口,里面是 `r-shell` 二进制。
 3. **把 `r-shell` 复制到 `PATH` 目录。** 最简单是放到 `/usr/local/bin`:
 
 ```bash
-# 挂载 DMG 后(卷名见 Finder,例如 "R-Shell")
-sudo cp /Volumes/R-Shell/r-shell /usr/local/bin/r-shell
+# 挂载 DMG 后(卷名见 Finder,例如 "Conch")
+sudo cp /Volumes/Conch/r-shell /usr/local/bin/r-shell
 sudo chmod +x /usr/local/bin/r-shell
 ```
 
@@ -223,7 +223,7 @@ r-shell --help
 
 **分步操作:**
 
-1. 从[最新版本](https://github.com/MageGojo/r-shell-cli/releases/latest)下载
+1. 从[最新版本](https://github.com/MageGojo/conch/releases/latest)下载
    `r-shell-windows-x64-installer.exe`。
 2. **运行安装器**(双击)。若 Windows SmartScreen 提示未知发布者,点 **更多信息 → 仍要运行**。
 3. 按向导完成。安装器会复制 `r-shell.exe` 并 **自动加入 `PATH`**。
@@ -241,8 +241,8 @@ r-shell --help
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/MageGojo/r-shell-cli.git
-cd r-shell-cli
+git clone https://github.com/MageGojo/conch.git
+cd conch
 
 # 2. 构建 release 二进制
 cargo build --release --manifest-path cli/Cargo.toml
@@ -263,7 +263,7 @@ r-shell --version
 cargo run --manifest-path cli/Cargo.toml -- <命令> [选项]
 ```
 
-> **编译依赖说明:** R-Shell 使用纯 Rust 的 `russh` SSH 栈,所以编译它 **不需要** OpenSSL 或
+> **编译依赖说明:** Conch 使用纯 Rust 的 `russh` SSH 栈,所以编译它 **不需要** OpenSSL 或
 > `libssh` 等系统库。
 
 ---
@@ -293,10 +293,10 @@ r-shell download -c prod /tmp/app.tar.gz ./app-copy.tar.gz
 
 ## 新手教程:从零到第一条远程命令
 
-下面这套流程,带你从全新安装一路走到运行命令、开 shell、传文件,并把 R-Shell 接入 AI 助手。
+下面这套流程,带你从全新安装一路走到运行命令、开 shell、传文件,并把 Conch 接入 AI 助手。
 每一步都自成一体 —— 复制、粘贴、改一下主机信息即可。
 
-### 第 1 步 — 确认 R-Shell 已安装
+### 第 1 步 — 确认 Conch 已安装
 
 ```bash
 r-shell --version     # 打印已安装版本
@@ -339,7 +339,7 @@ r-shell connections list
 
 ### 第 3 步 — 运行第一条远程命令
 
-首次连接时,R-Shell 会把服务器主机密钥记录到 `~/.ssh/known_hosts`(首次信任,TOFU),
+首次连接时,Conch 会把服务器主机密钥记录到 `~/.ssh/known_hosts`(首次信任,TOFU),
 然后运行你的命令并退出:
 
 ```bash
@@ -383,7 +383,7 @@ r-shell stats -c prod
 
 ```bash
 r-shell mcp
-# R-Shell MCP server listening on http://127.0.0.1:9123/mcp
+# Conch MCP server listening on http://127.0.0.1:9123/mcp
 ```
 
 客户端配置与完整工具列表见 [MCP 集成(AI 助手)](#mcp-集成ai-助手)。到这里,
@@ -408,7 +408,7 @@ r-shell exec --connection ssh-1781247286839 -- whoami
 r-shell exec --host 203.0.113.10 --user deploy --port 22 -- whoami
 ```
 
-如果需要密码但未提供,R-Shell 会安全地提示输入(不回显)。
+如果需要密码但未提供,Conch 会安全地提示输入(不回显)。
 
 通用目标参数(`exec`、`shell`、`ls`、`upload`、`download`、`stats` 都支持):
 
@@ -510,7 +510,7 @@ r-shell stats -c prod
 
 ```bash
 r-shell mcp
-# R-Shell MCP server listening on http://127.0.0.1:9123/mcp
+# Conch MCP server listening on http://127.0.0.1:9123/mcp
 # 按 Ctrl-C 停止。
 ```
 
@@ -518,14 +518,14 @@ r-shell mcp
 
 ## 认证方式
 
-R-Shell 支持两种方式:
+Conch 支持两种方式:
 
 - **密码** —— `--auth password` 配合 `--password`,或省略它,在连接时安全地提示输入。
 - **公钥** —— `--auth publickey` 配合 `--key-path`(加密密钥还需 `--passphrase`)。`~/` 开头的路径会被展开。
 
 ### 主机密钥校验
 
-R-Shell 按标准 `~/.ssh/known_hosts` 校验服务器主机密钥,采用 **首次信任(TOFU)**:
+Conch 按标准 `~/.ssh/known_hosts` 校验服务器主机密钥,采用 **首次信任(TOFU)**:
 
 - **首次连接**:记录其密钥到 `known_hosts`,连接继续。
 - **后续连接**:密钥必须与记录一致。
@@ -556,7 +556,7 @@ R-Shell 按标准 `~/.ssh/known_hosts` 校验服务器主机密钥,采用 **首�
 
 ## MCP 集成(AI 助手)
 
-**R-Shell 内置 MCP(模型上下文协议)服务器**,让 Cursor、Claude Desktop 等兼容 MCP 的 AI 编程助手
+**Conch 内置 MCP(模型上下文协议)服务器**,让 Cursor、Claude Desktop 等兼容 MCP 的 AI 编程助手
 通过一个仅本地的安全端点管理连接、操作远程服务器。用 `r-shell mcp` 启动,客户端指向
 `http://127.0.0.1:9123/mcp`。
 
@@ -617,28 +617,28 @@ Cursor / Claude 风格的 MCP 配置示例:
 | `ls` / `stats` 没有有用输出 | 目标不是 Linux | 它们依赖 GNU `ls` 与 `/proc`;非 Linux 的 POSIX 主机请用 `exec` |
 | AI 客户端连不上 MCP | 服务没起或 URL 错 | 运行 `r-shell mcp`,并精确使用 `http://127.0.0.1:9123/mcp`(仅回环) |
 
-仍有问题?给任意命令加 `--help`,或到 [GitHub 仓库](https://github.com/MageGojo/r-shell-cli/issues) 提 issue。
+仍有问题?给任意命令加 `--help`,或到 [GitHub 仓库](https://github.com/MageGojo/conch/issues) 提 issue。
 
 ---
 
 ## 常见问题 FAQ
 
-**R-Shell 是什么?**
-R-Shell 是一款开源、AI 原生、用 Rust 编写的 SSH 工具。它的首要用途是作为 **MCP(模型上下文协议)
+**Conch 是什么?**
+Conch 是一款开源、AI 原生、用 Rust 编写的 SSH 工具。它的首要用途是作为 **MCP(模型上下文协议)
 服务器**,让 AI 助手安全地操作远程服务器;它同时也是一个单文件 SSH 客户端,能管理已保存连接、运行
 远程命令、打开交互式 PTY shell、通过 SFTP 传文件、给远程系统状态拍快照。
 
-**怎么把 R-Shell 接到 AI 智能体 / MCP 客户端?**
+**怎么把 Conch 接到 AI 智能体 / MCP 客户端?**
 运行 `r-shell mcp`,把 `http://127.0.0.1:9123/mcp` 加到你的 MCP 客户端(如 Cursor 的
 `~/.cursor/mcp.json` 或 Claude Desktop)。智能体随后打开一个持久 SSH 会话,使用 `ssh_exec`、
 `ssh_read_file`、`ssh_write_file` 等工具。详见 [面向 AI 助手(MCP)](#面向-ai-助手mcp)。
 
-**为什么 R-Shell 比让 AI 智能体直接调用裸 `ssh` 更好?**
-R-Shell 在多次工具调用之间保持同一个 SSH 会话常驻,返回结构化结果,绝不泄露凭据,且只绑定 localhost。
+**为什么 Conch 比让 AI 智能体直接调用裸 `ssh` 更好?**
+Conch 在多次工具调用之间保持同一个 SSH 会话常驻,返回结构化结果,绝不泄露凭据,且只绑定 localhost。
 裸 `ssh` 子进程每一步都要重新认证,会把密钥泄漏进命令行,还可能因反复登录触发服务器端入侵检测。
 
-**R-Shell 免费且开源吗?**
-是。R-Shell 以 **MIT 许可证** 发布,个人与商业用途均免费。
+**Conch 免费且开源吗?**
+是。Conch 以 **MIT 许可证** 发布,个人与商业用途均免费。
 
 **支持哪些操作系统?**
 预编译下载提供 **macOS(Apple Silicon 与 Intel)** 的 `.dmg` 镜像,以及 **Windows x64** 的 `.exe`
@@ -649,7 +649,7 @@ POSIX SSH 主机,而 `ls`、`stats` 针对 Linux 服务器做了适配。
 支持。用 `--auth publickey` 配合 `--key-path`(加密密钥加 `--passphrase`)。也支持密码认证,
 未存储密码时会有安全的不回显提示。
 
-**R-Shell 安全吗?**
+**Conch 安全吗?**
 安全。它按 `~/.ssh/known_hosts` 校验主机密钥(首次信任),绝不打印或返回密码/密钥,以仅属主权限存储
 配置,并将 MCP 服务器 **仅绑定 localhost**,带 DNS 重绑定与跨域防护。详见 [安全](#安全)。
 
@@ -657,8 +657,8 @@ POSIX SSH 主机,而 `ls`、`stats` 针对 Linux 服务器做了适配。
 存在你平台数据目录下的本地 `workspace.json`(例如 macOS 的 `~/Library/Application Support/r-shell/`)。
 详见 [数据与配置](#数据与配置)。
 
-**怎么更新 R-Shell?**
-从 [Releases 页面](https://github.com/MageGojo/r-shell-cli/releases/latest) 下载最新 `.dmg` / 安装器
+**怎么更新 Conch?**
+从 [Releases 页面](https://github.com/MageGojo/conch/releases/latest) 下载最新 `.dmg` / 安装器
 重新安装,或用 `git pull` + `cargo build --release` 重新编译。
 
 ---
@@ -700,19 +700,19 @@ cargo build --manifest-path cli/Cargo.toml
 
 ## 致谢
 
-R-Shell 由 **极数本源 ApiZero**([apizero.cn](https://apizero.cn/))团队开发与维护。
+Conch 由 **极数本源 ApiZero**([apizero.cn](https://apizero.cn/))团队开发与维护。
 
 **极数本源 ApiZero 是什么?** 它是一个 **API 聚合平台**,让开发者与 AI 工具用 **一个 Key 调用
 100+ 个常用 API**,统一鉴权、统一计费,约五分钟即可接入。平台把日常开发要用到的能力 —— IP 归属地
 查询、天气、文本翻译、OCR 文字识别、内容审核、AI 文生图等 —— 收敛到一个一致的接口背后,省去逐家
 注册、各自管理 Key 和分别计费的麻烦。
 
-R-Shell 正是这项工作的副产物:在为 **AI 智能体与编程助手(Cursor、Claude、Claude Code)** 打造
+Conch 正是这项工作的副产物:在为 **AI 智能体与编程助手(Cursor、Claude、Claude Code)** 打造
 基础设施时,我们需要一种安全、结构化的方式让它们操作真实的远程服务器,于是把其中的 SSH/MCP 这一层
-开源成了 R-Shell。如果你也在把各类 API 接入 AI 助手或应用、想用「一个 Key」替代十几套对接,
+开源成了 Conch。如果你也在把各类 API 接入 AI 助手或应用、想用「一个 Key」替代十几套对接,
 极数本源 ApiZero 正是为此而生([apizero.cn](https://apizero.cn/))。
 
-欢迎在 [GitHub 仓库](https://github.com/MageGojo/r-shell-cli) 提交贡献、issue 与 PR。
+欢迎在 [GitHub 仓库](https://github.com/MageGojo/conch) 提交贡献、issue 与 PR。
 
 ---
 

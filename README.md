@@ -1,8 +1,8 @@
-# R-Shell — The AI-Native SSH Client & MCP Server for Remote Servers (Rust)
+# Conch — The AI-Native SSH Client & MCP Server for Remote Servers (Rust)
 
 **中文文档：[README.zh-CN.md](README.zh-CN.md)** ｜ 关键词：AI 助手 SSH 工具 · MCP 服务器 · 让 Cursor / Claude 操作远程服务器 · AI 远程运维 · 大模型连接服务器
 
-> **R-Shell is an open-source, AI-native SSH tool built so AI assistants can
+> **Conch is an open-source, AI-native SSH tool built so AI assistants can
 > operate your remote servers safely.** It ships a built-in **MCP (Model Context
 > Protocol) server**, so agents like **Cursor, Claude, and Claude Code** can open
 > persistent SSH sessions, run remote commands, read and write files over SFTP,
@@ -13,12 +13,12 @@
 
 > **AI agents:** start the server with `r-shell mcp`, then connect to
 > `http://127.0.0.1:9123/mcp`. See
-> [R-Shell for AI Assistants](#r-shell-for-ai-assistants-mcp) for ready-to-paste
+> [Conch for AI Assistants](#r-shell-for-ai-assistants-mcp) for ready-to-paste
 > Cursor/Claude config and example prompts.
 
 <p align="center">
-  <a href="https://github.com/MageGojo/r-shell-cli/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/MageGojo/r-shell-cli?label=download&sort=semver"></a>
-  <a href="https://github.com/MageGojo/r-shell-cli/actions/workflows/release.yml"><img alt="Release builds" src="https://img.shields.io/github/actions/workflow/status/MageGojo/r-shell-cli/release.yml?label=release%20build"></a>
+  <a href="https://github.com/MageGojo/conch/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/MageGojo/conch?label=download&sort=semver"></a>
+  <a href="https://github.com/MageGojo/conch/actions/workflows/release.yml"><img alt="Release builds" src="https://img.shields.io/github/actions/workflow/status/MageGojo/conch/release.yml?label=release%20build"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue">
   <img alt="Language" src="https://img.shields.io/badge/built%20with-Rust-orange?logo=rust">
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -37,11 +37,11 @@ r-shell <command> [options]
 
 ---
 
-## What is R-Shell? (TL;DR)
+## What is Conch? (TL;DR)
 
-_一句话：R-Shell 是 **AI 原生的 SSH 工具 / MCP 服务器**，让 AI 助手(Cursor、Claude)通过一条安全的持久连接运行远程命令、读写文件、管理服务器。_
+_一句话：Conch 是 **AI 原生的 SSH 工具 / MCP 服务器**，让 AI 助手(Cursor、Claude)通过一条安全的持久连接运行远程命令、读写文件、管理服务器。_
 
-**R-Shell is an AI-native, Rust-based SSH tool.** Its core purpose is to give AI
+**Conch is an AI-native, Rust-based SSH tool.** Its core purpose is to give AI
 assistants a safe, structured way to operate remote servers via the **Model
 Context Protocol (MCP)** — while doubling as a fast, scriptable SSH client for
 humans. In short:
@@ -52,13 +52,13 @@ humans. In short:
   Code)** to manage servers, plus developers, DevOps/SRE engineers, and sysadmins
   who want reproducible, scriptable SSH workflows.
 - **Why it exists:** AI agents shouldn’t shell out to raw `ssh` and re-authenticate
-  on every step. R-Shell keeps **one persistent SSH session** alive and exposes
+  on every step. Conch keeps **one persistent SSH session** alive and exposes
   safe, named tools (`ssh_exec`, `ssh_read_file`, `ssh_write_file`, …) so agents
   can iterate quickly without leaking credentials or tripping intrusion detection.
 - **What it is *not*:** it is **not** a GUI app and not a background daemon — it
   connects, does its job, and exits (except `shell` and `mcp`, which stay open).
 
-> **In one sentence:** *R-Shell is the AI-native SSH workspace — an MCP server
+> **In one sentence:** *Conch is the AI-native SSH workspace — an MCP server
 > that lets AI assistants run commands, edit files, and manage remote servers
 > through one secure, persistent connection.*
 
@@ -66,9 +66,9 @@ humans. In short:
 
 ## Table of Contents
 
-- [What is R-Shell? (TL;DR)](#what-is-r-shell-tldr)
-- [R-Shell for AI Assistants (MCP)](#r-shell-for-ai-assistants-mcp)
-- [Why R-Shell? (Key Benefits)](#why-r-shell-key-benefits)
+- [What is Conch? (TL;DR)](#what-is-r-shell-tldr)
+- [Conch for AI Assistants (MCP)](#r-shell-for-ai-assistants-mcp)
+- [Why Conch? (Key Benefits)](#why-r-shell-key-benefits)
 - [Features](#features)
 - [Download & Install (Prebuilt Binaries)](#download--install-prebuilt-binaries)
   - [macOS — install from a `.dmg`](#macos--install-from-a-dmg)
@@ -98,17 +98,17 @@ humans. In short:
 
 ---
 
-## R-Shell for AI Assistants (MCP)
+## Conch for AI Assistants (MCP)
 
 **中文关键词｜AI 助手 SSH 工具 · MCP 服务器 · 让 Cursor / Claude 操作远程服务器 · AI 运维 · AI 连接服务器 · 大模型远程命令执行**
 
-R-Shell is built **AI-first**: its primary job is to let AI coding agents operate
+Conch is built **AI-first**: its primary job is to let AI coding agents operate
 remote servers safely. Instead of an agent spawning raw `ssh`/`scp` subprocesses
-and re-authenticating on every step, R-Shell exposes a small set of **named,
+and re-authenticating on every step, Conch exposes a small set of **named,
 sandboxed tools over the Model Context Protocol (MCP)** and keeps a single SSH
 session alive between calls.
 
-### Why agents should use R-Shell instead of raw `ssh` ｜为什么 AI 智能体该用 R-Shell 而非裸 `ssh`
+### Why agents should use Conch instead of raw `ssh` ｜为什么 AI 智能体该用 Conch 而非裸 `ssh`
 
 - **One persistent session** — open it once with `ssh_session_open`, then reuse it
   for every command and file edit. No reconnect storms, no repeated auth prompts.
@@ -128,7 +128,7 @@ session alive between calls.
 
 ```bash
 r-shell mcp
-# R-Shell MCP server listening on http://127.0.0.1:9123/mcp
+# Conch MCP server listening on http://127.0.0.1:9123/mcp
 ```
 
 **Step 2 — point your AI client at it.** Cursor (`~/.cursor/mcp.json`) or any
@@ -176,9 +176,9 @@ full tool schema, security model, and persistent-session details.
 
 ---
 
-## Why R-Shell? (Key Benefits)
+## Why Conch? (Key Benefits)
 
-| If you want to… | R-Shell gives you… |
+| If you want to… | Conch gives you… |
 | --- | --- |
 | **Let AI agents (Cursor/Claude) run your servers** | **`r-shell mcp` — a secure, localhost-only MCP server with persistent SSH sessions** |
 | Stop re-typing `ssh user@host -p port -i key` | **Saved connections** referenced by short name (`-c prod`) |
@@ -213,9 +213,30 @@ full tool schema, security model, and persistent-session details.
 
 _下载与安装：macOS(Apple Silicon / Intel)`.dmg` 镜像、Windows x64 `.exe` 安装器；Linux 用 Cargo 源码编译。_
 
-The easiest way to install R-Shell is to grab a prebuilt package from the
-**[GitHub Releases page](https://github.com/MageGojo/r-shell-cli/releases/latest)**.
-Every tagged release is built automatically by CI and ships three downloads:
+The easiest way to install Conch is to grab a prebuilt package from the
+**[GitHub Releases page](https://github.com/MageGojo/conch/releases/latest)**.
+
+### Desktop app (Conch GUI) ｜桌面版（推荐）
+
+The flagship **desktop app** (Flutter + Rust) bundles the connection manager,
+multi-tab terminal, Warp-style command blocks, live monitoring, SFTP and the MCP
+server into one window. Its runtime is bundled — **double-click to run, no extra
+setup** (no VC++ redistributable, no SDKs):
+
+| Platform | Download | Notes |
+| --- | --- | --- |
+| **Windows x64 (installer)** | `Conch-windows-x64-setup.exe` | Installs with Start Menu + Desktop shortcuts; VC++ runtime bundled. |
+| **Windows x64 (portable)** | `Conch-windows-x64.zip` | Unzip and run `Conch.exe`. |
+| **macOS** | `Conch-macos.zip` | Unzip and drag `Conch.app` into `/Applications`. |
+
+> First run: on macOS, right-click `Conch.app` → **Open** to bypass Gatekeeper
+> (the app is unsigned); on Windows, if SmartScreen warns, choose **More info →
+> Run anyway** (unsigned installer).
+
+### Command-line tool (`r-shell` CLI) downloads
+
+Prefer a lightweight binary for scripting / CI / headless use? The `r-shell` CLI
+ships separately:
 
 | Platform | Download | What you get |
 | --- | --- | --- |
@@ -233,15 +254,15 @@ Every tagged release is built automatically by CI and ships three downloads:
 
 1. Download `r-shell-macos-apple-silicon.dmg` (Apple Silicon) or
    `r-shell-macos-intel.dmg` (Intel) from the
-   [latest release](https://github.com/MageGojo/r-shell-cli/releases/latest).
+   [latest release](https://github.com/MageGojo/conch/releases/latest).
 2. **Double-click the `.dmg`** to mount it. A Finder window opens showing the
    `r-shell` binary.
 3. **Copy `r-shell` to a folder on your `PATH`.** The simplest place is
    `/usr/local/bin`:
 
 ```bash
-# After mounting the DMG (volume name shown in Finder, e.g. "R-Shell")
-sudo cp /Volumes/R-Shell/r-shell /usr/local/bin/r-shell
+# After mounting the DMG (volume name shown in Finder, e.g. "Conch")
+sudo cp /Volumes/Conch/r-shell /usr/local/bin/r-shell
 sudo chmod +x /usr/local/bin/r-shell
 ```
 
@@ -267,7 +288,7 @@ r-shell --help
 **Step-by-step:**
 
 1. Download `r-shell-windows-x64-installer.exe` from the
-   [latest release](https://github.com/MageGojo/r-shell-cli/releases/latest).
+   [latest release](https://github.com/MageGojo/conch/releases/latest).
 2. **Run the installer** (double-click). If Windows SmartScreen warns about an
    unknown publisher, click **More info → Run anyway**.
 3. Follow the wizard. The installer copies `r-shell.exe` and **adds it to your
@@ -292,8 +313,8 @@ scripts.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/MageGojo/r-shell-cli.git
-cd r-shell-cli
+git clone https://github.com/MageGojo/conch.git
+cd conch
 
 # 2. Build a release binary
 cargo build --release --manifest-path cli/Cargo.toml
@@ -314,7 +335,7 @@ Prefer not to install it globally? Run it straight through Cargo:
 cargo run --manifest-path cli/Cargo.toml -- <command> [options]
 ```
 
-> **Build prerequisites note:** R-Shell uses the pure-Rust `russh` SSH stack, so
+> **Build prerequisites note:** Conch uses the pure-Rust `russh` SSH stack, so
 > you do **not** need OpenSSL or `libssh` system libraries to compile it.
 
 ---
@@ -347,10 +368,10 @@ r-shell download -c prod /tmp/app.tar.gz ./app-copy.tar.gz
 _新手教程：从安装到保存连接、运行命令、交互式 shell、SFTP 传输、查看服务器状态、接入 AI 助手(MCP)的完整流程。_
 
 This walkthrough takes you from a fresh install to running commands, opening a
-shell, transferring files, and wiring R-Shell into an AI assistant. Every step is
+shell, transferring files, and wiring Conch into an AI assistant. Every step is
 self-contained — copy, paste, and adjust the host details.
 
-### Step 1 — Confirm R-Shell is installed
+### Step 1 — Confirm Conch is installed
 
 ```bash
 r-shell --version     # prints the installed version
@@ -394,7 +415,7 @@ r-shell connections list
 
 ### Step 3 — Run your first remote command
 
-The first time you connect, R-Shell records the server’s host key in
+The first time you connect, Conch records the server’s host key in
 `~/.ssh/known_hosts` (trust-on-first-use). Then it runs your command and exits:
 
 ```bash
@@ -442,7 +463,7 @@ Desktop** at it:
 
 ```bash
 r-shell mcp
-# R-Shell MCP server listening on http://127.0.0.1:9123/mcp
+# Conch MCP server listening on http://127.0.0.1:9123/mcp
 ```
 
 See [MCP Integration](#mcp-integration-ai-assistants) for the client config and
@@ -469,7 +490,7 @@ r-shell exec --connection ssh-1781247286839 -- whoami
 r-shell exec --host 203.0.113.10 --user deploy --port 22 -- whoami
 ```
 
-If a password is required but not provided, R-Shell prompts for it securely
+If a password is required but not provided, Conch prompts for it securely
 (input is not echoed).
 
 Common target flags (available on `exec`, `shell`, `ls`, `upload`, `download`,
@@ -611,7 +632,7 @@ can manage your saved connections. Bound to localhost only.
 
 ```bash
 r-shell mcp
-# R-Shell MCP server listening on http://127.0.0.1:9123/mcp
+# Conch MCP server listening on http://127.0.0.1:9123/mcp
 # Press Ctrl-C to stop.
 ```
 
@@ -619,7 +640,7 @@ r-shell mcp
 
 ## Authentication
 
-R-Shell supports two methods:
+Conch supports two methods:
 
 - **Password** — `--auth password` with `--password`, or omit it and you will be
   prompted securely at connect time.
@@ -628,11 +649,11 @@ R-Shell supports two methods:
 
 For saved connections, the auth method and any stored secrets are read from
 `workspace.json`. If a saved password-auth connection has no stored password,
-R-Shell prompts for it when you connect.
+Conch prompts for it when you connect.
 
 ### Host-key verification
 
-R-Shell verifies server host keys against your standard `~/.ssh/known_hosts`
+Conch verifies server host keys against your standard `~/.ssh/known_hosts`
 file, using **trust-on-first-use (TOFU)**:
 
 - **First connection** to a host: its key is recorded in `known_hosts` and the
@@ -663,7 +684,7 @@ The `<local data dir>` is platform-specific:
 | Linux | `~/.local/share/r-shell/workspace.json` |
 | Windows | `%LOCALAPPDATA%\r-shell\workspace.json` |
 
-This file is compatible with workspaces created by earlier R-Shell versions.
+This file is compatible with workspaces created by earlier Conch versions.
 
 ---
 
@@ -671,7 +692,7 @@ This file is compatible with workspaces created by earlier R-Shell versions.
 
 **中文关键词｜MCP 集成 · Model Context Protocol 服务器 · AI 助手对接 · Cursor / Claude Desktop 配置 · 持久 SSH 会话 · AI Agent 工具列表**
 
-**R-Shell ships a built-in MCP (Model Context Protocol) server**, so AI coding
+**Conch ships a built-in MCP (Model Context Protocol) server**, so AI coding
 assistants — Cursor, Claude Desktop, and other MCP-compatible clients — can
 manage your saved connections and operate remote servers through a secure,
 localhost-only endpoint. Start it with `r-shell mcp` and point your client at
@@ -743,81 +764,81 @@ Common issues and how to fix them:
 | AI client can’t reach MCP | Server not running or wrong URL | Run `r-shell mcp` and use exactly `http://127.0.0.1:9123/mcp` (loopback only) |
 
 Still stuck? Run any command with `--help`, or open an issue on the
-[GitHub repository](https://github.com/MageGojo/r-shell-cli/issues).
+[GitHub repository](https://github.com/MageGojo/conch/issues).
 
 ---
 
 ## FAQ — Frequently Asked Questions
 
-_常见问题(中文)：R-Shell 是什么？怎么和 AI 助手 / MCP 对接？为什么比裸 `ssh` 适合 AI Agent？支持哪些系统？怎么用 SSH 密钥？安全吗？——下方英文 FAQ 逐条解答。_
+_常见问题(中文)：Conch 是什么？怎么和 AI 助手 / MCP 对接？为什么比裸 `ssh` 适合 AI Agent？支持哪些系统？怎么用 SSH 密钥？安全吗？——下方英文 FAQ 逐条解答。_
 
-**What is R-Shell?**
-R-Shell is an open-source, AI-native SSH tool written in Rust. Its primary purpose
+**What is Conch?**
+Conch is an open-source, AI-native SSH tool written in Rust. Its primary purpose
 is to act as an **MCP (Model Context Protocol) server** so AI assistants can
 operate remote servers safely; it is also a single-binary SSH client that manages
 saved connections, runs remote commands, opens interactive PTY shells, transfers
 files over SFTP, and snapshots remote system stats.
 
-**How do I use R-Shell with an AI agent / MCP client?**
+**How do I use Conch with an AI agent / MCP client?**
 Run `r-shell mcp` and add `http://127.0.0.1:9123/mcp` to your MCP client (e.g.
 Cursor’s `~/.cursor/mcp.json` or Claude Desktop). The agent then opens a
 persistent SSH session and uses tools like `ssh_exec`, `ssh_read_file`, and
-`ssh_write_file`. See [R-Shell for AI Assistants](#r-shell-for-ai-assistants-mcp).
+`ssh_write_file`. See [Conch for AI Assistants](#r-shell-for-ai-assistants-mcp).
 
-**Why is R-Shell better than letting an AI agent call raw `ssh`?**
-R-Shell keeps a single SSH session alive across tool calls, returns structured
+**Why is Conch better than letting an AI agent call raw `ssh`?**
+Conch keeps a single SSH session alive across tool calls, returns structured
 results, never leaks credentials, and binds to localhost only. Raw `ssh`
 subprocesses re-authenticate every step, leak secrets into command lines, and can
 trip server-side intrusion detection from repeated logins.
 
-**How is R-Shell different from plain `ssh` / `scp`?**
-R-Shell unifies `ssh`, `scp`/`sftp`, a system monitor, and an AI integration into
+**How is Conch different from plain `ssh` / `scp`?**
+Conch unifies `ssh`, `scp`/`sftp`, a system monitor, and an AI integration into
 one tool. You save a connection once and reference it by name (`-c prod`) instead
 of re-typing host, user, port, and key flags. Output is clean and greppable, and
 structured `--json` output is available where it helps scripting.
 
-**Is R-Shell free and open source?**
-Yes. R-Shell is released under the **MIT License**, so it’s free for personal and
+**Is Conch free and open source?**
+Yes. Conch is released under the **MIT License**, so it’s free for personal and
 commercial use.
 
-**Which operating systems does R-Shell support?**
+**Which operating systems does Conch support?**
 Prebuilt downloads are provided for **macOS (Apple Silicon and Intel)** as `.dmg`
 images and **Windows x64** as an `.exe` installer. **Linux** and any other
 platform can build from source with Cargo. The interactive `shell`, `exec`,
 `upload`, and `download` commands work against any POSIX SSH host, while `ls` and
 `stats` are tuned for Linux servers.
 
-**Does R-Shell support SSH key (public-key) authentication?**
+**Does Conch support SSH key (public-key) authentication?**
 Yes. Use `--auth publickey` with `--key-path` (and `--passphrase` for encrypted
 keys). Password authentication is also supported, with a secure no-echo prompt
 when no password is stored.
 
-**Is R-Shell secure?**
+**Is Conch secure?**
 Yes. It verifies host keys against `~/.ssh/known_hosts` (trust-on-first-use),
 never prints or returns passwords/keys, stores its config with owner-only
 permissions, and binds the MCP server to **localhost only** with DNS-rebinding
 and cross-origin protections. See [Security](#security).
 
-**Can AI assistants like Cursor or Claude use R-Shell?**
+**Can AI assistants like Cursor or Claude use Conch?**
 Yes. Run `r-shell mcp` to start a Model Context Protocol server at
 `http://127.0.0.1:9123/mcp`. MCP-compatible clients can then list connections and
 run commands, read/write files, and reuse a persistent SSH session across calls.
 See [MCP Integration](#mcp-integration-ai-assistants).
 
-**Where does R-Shell store my saved connections?**
+**Where does Conch store my saved connections?**
 In a local `workspace.json` under your platform’s data directory (for example,
 `~/Library/Application Support/r-shell/` on macOS). See
 [Data & Configuration](#data--configuration).
 
-**How do I install R-Shell on macOS from the DMG?**
+**How do I install Conch on macOS from the DMG?**
 Download the matching `.dmg`, mount it, copy `r-shell` to `/usr/local/bin`, run
 `xattr -dr com.apple.quarantine /usr/local/bin/r-shell`, then run
 `r-shell --version`. Full steps are in
 [Download & Install](#macos--install-from-a-dmg).
 
-**How do I update R-Shell?**
+**How do I update Conch?**
 Download the newest `.dmg` / installer from the
-[Releases page](https://github.com/MageGojo/r-shell-cli/releases/latest) and
+[Releases page](https://github.com/MageGojo/conch/releases/latest) and
 reinstall, or rebuild from source with `git pull` + `cargo build --release`.
 
 ---
@@ -899,7 +920,7 @@ r-shell/
 
 ## Credits
 
-R-Shell is developed and maintained by the team behind **ApiZero (极数本源)** —
+Conch is developed and maintained by the team behind **ApiZero (极数本源)** —
 [apizero.cn](https://apizero.cn/).
 
 **What is ApiZero?** ApiZero is a unified API platform (an "API aggregator") that
@@ -910,15 +931,15 @@ text translation, OCR, content moderation, AI image generation, and more — beh
 one consistent endpoint, so you don't have to register, key-manage, and bill each
 provider separately.
 
-R-Shell grew directly out of that work: while building infrastructure for
+Conch grew directly out of that work: while building infrastructure for
 **AI agents and coding assistants (Cursor, Claude, Claude Code)**, we needed a safe,
 structured way to let those agents operate real remote servers — so we open-sourced
-the SSH/MCP layer as R-Shell. If you're wiring APIs into an AI assistant or app and
+the SSH/MCP layer as Conch. If you're wiring APIs into an AI assistant or app and
 want a single key instead of a dozen integrations, ApiZero is built for exactly that
 ([apizero.cn](https://apizero.cn/)).
 
 Contributions, issues, and pull requests are welcome on the
-[GitHub repository](https://github.com/MageGojo/r-shell-cli).
+[GitHub repository](https://github.com/MageGojo/conch).
 
 ---
 

@@ -1,5 +1,7 @@
 # Conch
 
+**English** · [简体中文](README.zh-CN.md)
+
 Conch is an SSH client written in Rust. A single `r-shell` binary manages saved
 connections, runs remote commands, opens an interactive shell, transfers files
 over SFTP, and prints a quick system snapshot.
@@ -10,8 +12,6 @@ of spawning a fresh `ssh` process on every step.
 
 There's a desktop app too — a Flutter UI on top of the same Rust core — with a
 tabbed terminal, file browser, and live monitoring.
-
-中文文档:[README.zh-CN.md](README.zh-CN.md)
 
 <p align="center">
   <a href="https://github.com/MageGojo/conch/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/MageGojo/conch?label=download&sort=semver"></a>

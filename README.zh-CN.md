@@ -1,5 +1,7 @@
 # Conch
 
+[English](README.md) · **简体中文**
+
 Conch 是一个用 Rust 写的 SSH 客户端。一个 `r-shell` 二进制就能管理已保存的连接、
 执行远程命令、打开交互式 shell、用 SFTP 传文件,以及打印一份系统状态快照。
 
@@ -8,8 +10,6 @@ Conch 是一个用 Rust 写的 SSH 客户端。一个 `r-shell` 二进制就能�
 
 另外还有一个桌面应用 —— 基于同一套 Rust 核心、用 Flutter 做界面 —— 带标签页终端、
 文件浏览器和实时监控。
-
-English docs: [README.md](README.md)
 
 <p align="center">
   <a href="https://github.com/MageGojo/conch/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/MageGojo/conch?label=download&sort=semver"></a>

@@ -21,8 +21,26 @@ tabbed terminal, file browser, and live monitoring.
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/gui/screenshots/conch-connections.png" alt="Conch connections dashboard" width="900"><br>
+  <em>Connections dashboard — saved hosts grouped by folder, with a built-in local monitor card.</em>
+</p>
+
+<p align="center">
+  <img src="docs/gui/screenshots/conch-command-blocks.png" alt="Conch command-block terminal" width="900"><br>
+  <em>Command-block terminal — each command and its output is its own block, with exit code, timing, and a working directory that persists across blocks.</em>
+</p>
+
+<p align="center">
+  <img src="docs/gui/screenshots/conch-monitor.png" alt="Conch live monitoring" width="900"><br>
+  <em>Live monitoring — CPU, memory, disks, and network with real-time charts.</em>
+</p>
+
 ## Contents
 
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [Install](#install)
 - [Quick start](#quick-start)

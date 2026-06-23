@@ -19,8 +19,26 @@ English docs: [README.md](README.md)
   <a href="#许可证"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
+## 截图
+
+<p align="center">
+  <img src="docs/gui/screenshots/conch-connections.png" alt="Conch 连接主页" width="900"><br>
+  <em>连接主页 —— 已保存的主机按分组排列,并内置一张「本机监控」卡片。</em>
+</p>
+
+<p align="center">
+  <img src="docs/gui/screenshots/conch-command-blocks.png" alt="Conch 命令块终端" width="900"><br>
+  <em>命令块终端 —— 每条命令与它的输出各成一块,带退出码、耗时,工作目录在块之间持续保持。</em>
+</p>
+
+<p align="center">
+  <img src="docs/gui/screenshots/conch-monitor.png" alt="Conch 实时监控" width="900"><br>
+  <em>实时监控 —— CPU、内存、磁盘与网络,实时走势图。</em>
+</p>
+
 ## 目录
 
+- [截图](#截图)
 - [功能](#功能)
 - [安装](#安装)
 - [快速上手](#快速上手)

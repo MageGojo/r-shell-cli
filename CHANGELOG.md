@@ -1,691 +1,419 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Conch desktop GUI: a Flutter front-end backed by the Rust core, with an application icon
+- MCP server mode with persistent SSH sessions, plus the open-sourced `r-shell-ssh` skill
+- Windows NSIS desktop installer that creates a desktop shortcut
+- Empty default workspace on first launch
+- Release CI that builds the macOS DMG and the Windows installer
+
+### Changed
+
+- Renamed the project from R-Shell to Conch
+- Rewrote the SSH core as a standalone Rust CLI and hardened security
+- Switched russh to pure-Rust crypto (dropped the OpenSSL dependency) so Windows builds run with no external runtime
+- Rewrote the English and Chinese README files
+
+### Fixed
+
+- `build_win` now locates the VC++ CRT redistributable reliably (recursive search, non-fatal, with a System32 fallback)
 
 ## [2.1.0] - 2026-06-04
 
-### 🗂️ R-Shell 2.1 — Directory Tree & Terminal Stability
-
-This release adds caching for the remote directory tree to preserve expand/collapse state and scroll position across tab switches, optimizes PTY terminal memory and flow control to prevent unbounded buffer growth, resolves keyboard shortcut conflicts, and fixes Windows SFTP upload compatibility.
-
 ### Added
 
-- 🗂️ **Directory Tree Caching**: Remote directory tree expand/collapse state and scroll position are now cached and restored when switching between file browser tabs
+- Cache the remote directory tree's expand/collapse state and scroll position, and restore them when switching file browser tabs
 
 ### Fixed
 
-- 🖥️ **PtyTerminal Performance & Flow Control**: Optimized terminal memory usage, implemented credit-based flow control, and added session output limits for more stable terminal behavior during heavy I/O
-- ⌨️ **Keyboard Shortcut Handling**: Resolved conflicts between terminal and application-level shortcuts; editable shortcut handling is now preserved correctly across component re-renders
-- 🪟 **Windows SFTP Upload**: File upload now works correctly for paths containing Windows-style basenames and folders (#24)
-
+- Reduce PTY terminal memory use with credit-based flow control and per-session output limits for stable behavior under heavy I/O
+- Resolve conflicts between terminal and application-level keyboard shortcuts; preserve editable shortcut handling across component re-renders
+- Fix Windows SFTP upload for paths with Windows-style basenames and folders (#24)
 
 ## [2.0.0] - 2026-05-30
 
-### 🚀 R-Shell 2.0 — File Viewer & Performance
-
-This major release introduces a dedicated popup window for viewing SSH files, improves OS-detection performance with concurrent-safe caching, and fixes terminal focus and scrollbar reliability.
-
 ### Added
 
-- 🗂️ **SSH File Popup Viewer**: Remote files can now be opened in a dedicated popup window directly from the file browser, keeping the main panel uncluttered
+- Open remote files in a dedicated popup window from the file browser
 
 ### Changed
 
-- ⚡ **OS Info Caching**: Remote OS detection now uses `OnceCell` for lock-free concurrent access, eliminating redundant SSH round-trips when multiple panels query system info simultaneously
+- Cache remote OS detection with `OnceCell` for lock-free concurrent access, avoiding redundant SSH round-trips
 
 ### Fixed
 
-- 🖥️ **Terminal Focus on Tab Switch**: Switching between terminal tabs now correctly restores keyboard focus to the active terminal (fix contributed via PR #13)
-- 📜 **Terminal Scrollbar Visibility**: PTY terminal scrollbar is now always rendered and its visibility logic corrected so it appears reliably when content overflows
-
+- Restore keyboard focus to the active terminal when switching tabs (PR #13)
+- Always render the PTY terminal scrollbar and correct its visibility logic so it appears when content overflows
 
 ## [1.8.0] - 2026-05-21
 
-### 🔄 R-Shell 1.8 — Smarter Recovery & Window Controls
-
-This release improves terminal resilience with automatic PTY reconnect handling after dropped connections, and refines desktop window behavior with better drag-region double-click maximize support on non-macOS platforms.
-
 ### Added
 
-- 🔁 **Automatic PTY Reconnect**: Interactive terminal sessions now automatically attempt reconnection after connection drops for a smoother recovery experience
+- Automatically attempt to reconnect interactive terminal sessions after a connection drop
 
 ### Changed
 
-- 🪟 **Drag Region UX on Non-macOS**: Improved titlebar drag-region behavior to support double-click maximize/restore interactions more consistently on non-macOS platforms
+- Improve titlebar drag-region behavior for double-click maximize/restore on non-macOS platforms
 
 ### Fixed
 
-- 🔌 **PTY Drop Recovery Flow**: Improved PTY connection-drop handling to reduce manual recovery steps when SSH sessions are interrupted
-
+- Improve PTY connection-drop handling to reduce manual recovery steps when SSH sessions are interrupted
 
 ## [1.7.0] - 2026-05-16
 
-### 🔖 R-Shell 1.7 — Stable Sessions
-
-This release brings long-lived connection reliability: SSH keepalive prevents servers from silently dropping idle sessions, and the PTY terminal now detects dropped connections gracefully instead of silently replacing the shell. A new lazy-loading directory tree, improved file browser toolbar, and robust path quoting round out the update.
-
 ### Added
 
-- 🌳 **Directory Tree**: New lazy-loading, expandable directory tree panel in the integrated file browser for fast folder navigation without changing the main view
-- 🔌 **SSH Keepalive**: Client-side SSH keepalive now runs every 60 seconds (3 missed replies triggers clean disconnect), preventing SSH servers from silently timing out idle connections after hours of inactivity
+- Lazy-loading, expandable directory tree panel in the integrated file browser
+- Client-side SSH keepalive every 60 seconds (3 missed replies triggers a clean disconnect) to prevent idle-timeout drops
 
 ### Changed
 
-- 🖥️ **File Browser Toolbar**: Enhanced integrated file browser UI with an improved toolbar layout, clearer action grouping, and better visual hierarchy
+- Improve the integrated file browser toolbar layout and action grouping
 
 ### Fixed
 
-- 🐛 **Path Quoting**: File listing and stat commands now correctly quote paths containing apostrophes, spaces, and other shell special characters — fixes errors browsing directories with unusual names
-- 🔄 **PTY Session Loss Detection**: After a session is established, a dropped SSH connection now displays `[SSH session lost. Use right-click → Reconnect]` instead of silently spawning a fresh shell with lost state
-- ⚡ **Reconnect Retry**: Implemented cancellation-aware exponential backoff for PTY reconnect attempts; permanent failures (connection not found) now fail fast instead of burning all retry attempts uselessly
-
+- Quote paths containing apostrophes, spaces, and other shell special characters in file listing and stat commands
+- Show `[SSH session lost. Use right-click → Reconnect]` after a dropped connection instead of silently spawning a fresh shell
+- Add cancellation-aware exponential backoff for PTY reconnect; fail fast on permanent errors instead of exhausting retries
 
 ## [1.6.0] - 2026-05-08
 
-### 🍎 R-Shell 1.6 — Native macOS Experience
-
-This release brings a native macOS menu bar, quick connect shortcuts, draggable window chrome, and improved SSH key compatibility across all platforms.
-
 ### Added
 
-- 🍎 **Native macOS Menu Bar**: Full `NSMenu` integration with standard macOS application menus (File, Edit, View, Window, Help)
-  - Provides native keyboard shortcuts and menu-driven access to all major app actions
-- ⚡ **Quick Connect**: New quick-connect shortcut in the Connection Manager for one-click access to recently used hosts
-- 🖱️ **Draggable Titlebar Region**: Menu bar area is now a native drag region so the window can be moved without a traditional title bar
-- 🔲 **Window Maximize Button**: Added native window maximize/restore control to the menu bar
+- Native macOS menu bar via `NSMenu` with standard application menus (File, Edit, View, Window, Help) and keyboard shortcuts
+- Quick Connect shortcut in the Connection Manager for recently used hosts
+- Draggable titlebar region so the window can be moved without a traditional title bar
+- Native window maximize/restore control in the menu bar
 
 ### Changed
 
-- 🎨 **Tab Styling Refresh**: Improved tab bar visual consistency — active, hover, and inactive states now have clearer differentiation
-- 📜 **Scrollbar Styling**: Updated scrollbar track and thumb colors for better visibility against dark backgrounds
+- Refresh tab styling for clearer active, hover, and inactive states
+- Update scrollbar track and thumb colors for better visibility on dark backgrounds
 
 ### Fixed
 
-- 🔐 **Cross-Platform SSH Key Paths**: `~/` tilde in key paths now expands correctly on all platforms (Linux, macOS, Windows)
-- 🔑 **SSH Key CRLF Normalization**: Private keys with Windows-style `\r\n` line endings are now normalized before use, fixing auth failures when keys are edited on Windows
-
+- Expand `~/` in SSH key paths correctly on Linux, macOS, and Windows
+- Normalize Windows-style `\r\n` line endings in private keys before use to fix auth failures
 
 ## [1.5.0] - 2026-04-30
 
-### 🔁 R-Shell 1.5 — Reliable Reconnect
-
-This release fixes reconnect flows that previously left the terminal permanently stuck after a network drop.
-
 ### Fixed
 
-- 🔌 **SSH Reconnect Re-establishes Session**: Reconnect actions (tab bar button and right-click menu) now properly re-authenticate to the backend before restarting the PTY, instead of reusing the dead SSH connection
-  - `handleReconnect` in `App.tsx` dispatches `RECONNECT_TAB` after a successful SSH reconnect to remount the terminal on the fresh connection
-  - Tab bar Reconnect calls the full backend reconnect path (`onReconnectTab`) instead of a bare state dispatch
-  - Right-click Reconnect in the PTY terminal delegates to `onReconnectTab` from context, with a WebSocket-only fallback when run outside a provider
-
+- Reconnect actions (tab bar button and right-click menu) now re-authenticate before restarting the PTY instead of reusing the dead SSH connection
+  - `handleReconnect` in `App.tsx` dispatches `RECONNECT_TAB` after a successful reconnect to remount the terminal
+  - Tab bar Reconnect uses the full backend reconnect path (`onReconnectTab`) instead of a bare state dispatch
+  - Right-click Reconnect delegates to `onReconnectTab` from context, with a WebSocket-only fallback outside a provider
 
 ## [1.4.0] - 2026-04-24
 
-### 🖥️ R-Shell 1.4 — OS Detection & Distro-Aware System Monitoring
-
-This release adds intelligent OS detection and cross-distro system monitoring, so CPU, memory, disk, and uptime metrics work correctly across different Linux distributions — not just the common case.
-
 ### Added
 
-- 🔍 **OS Detection Module** (`os_detect`): Detects remote OS type and distribution info (distro, version, package manager) on connect
-  - Caches `OsInfo` per connection in `ConnectionManager` to avoid repeated system calls
-  - Supports accurate metric collection across different Linux distributions
-
-- 🛡️ **Error Boundary Component**: New React `ErrorBoundary` wraps key UI sections to catch and display render errors gracefully instead of crashing the whole app
+- OS detection module (`os_detect`) that detects the remote OS type and distribution (distro, version, package manager) on connect and caches `OsInfo` per connection
+- React `ErrorBoundary` around key UI sections to catch render errors gracefully
 
 ### Changed
 
-- 🖥️ **Distro-Aware System Monitor**: `get_system_stats` now uses OS-specific commands for CPU, memory, disk, and uptime stats
-  - Selects the correct command variant based on detected distro (e.g. handles differences between Debian, Alpine, Arch, etc.)
-  - `system-monitor` component updated to pass OS context to backend commands
-
-- ♻️ **WebSocket Server Refactored**: Improved flow control and connection lifecycle handling
-- 🧹 **Code Cleanup**: Improved formatting and import organization across `commands.rs`, `ftp_client.rs`, `sftp_client.rs`, `ssh/mod.rs`, and `lib.rs`
-
+- Distro-aware system monitor: `get_system_stats` uses OS-specific commands for CPU, memory, disk, and uptime, selecting the right variant per distro
+- Refactor the WebSocket server for better flow control and connection lifecycle handling
+- Clean up formatting and imports across `commands.rs`, `ftp_client.rs`, `sftp_client.rs`, `ssh/mod.rs`, and `lib.rs`
 
 ## [1.3.1] - 2026-04-01
 
-### Fixed
-
-- 🔐 **RSA SSH Server Compatibility**: Resolved "No common key algorithm" connection failure for RSA-keyed SSH servers
-  - Added support for `ssh-rsa` host key algorithm for compatibility with older servers
-  - Fixes connection issues with legacy SSH servers that only support RSA host keys
-
-### Changed
-
-- 📖 **README Enhanced**: Added performance metrics and lightweight positioning documentation
-
-### 🔄 R-Shell 1.3 — Multi-Connection Profiles & File Browser Polish
-
-This release enables multiple simultaneous connections to the same server profile, adds a duplicate tab action, and significantly improves the SSH file browser with a unified transfer queue experience.
-
 ### Added
 
-- 🔀 **Multi-Connection Support for Same Profile**: Open multiple tabs connecting to the same connection profile
-  - Each tab gets an independent session with unique session ID
-  - Automatic numeric suffixes for tab names (e.g., "my-server (2)", "my-server (3)")
-  - Full lifecycle management — sessions clean up independently on tab close
-  - Works across SSH, SFTP, and FTP protocols
-
-- 📋 **Duplicate Tab Action**: Right-click context menu on tabs now includes "Duplicate Tab"
-  - Quickly create a new connection to the same server
-  - Supported for SSH terminals, SFTP, and FTP sessions
+- Multiple simultaneous connections to the same profile, each with an independent session and unique ID and automatic numeric suffixes (e.g. "my-server (2)"); works across SSH, SFTP, and FTP
+- "Duplicate Tab" context-menu action for SSH terminals, SFTP, and FTP sessions
 
 ### Changed
 
-- 📁 **SSH File Browser Refactored**: Major overhaul for better reliability and UX
-  - Reducer-based state management for predictable behavior
-  - Integrated Transfer Queue UI component for visual transfer progress
-  - OS-native drag-and-drop upload support (replaces legacy byte-array logic)
-  - Download workflows with native file picker dialogs for single and multi-file
-  - Removed legacy SFTP panel — unified file browsing experience
+- Rework the SSH file browser: reducer-based state, integrated transfer-queue UI, OS-native drag-and-drop upload, native file-picker downloads, and removal of the legacy SFTP panel
+- Document performance metrics and lightweight positioning in the README
 
 ### Fixed
 
-- ⏱️ **Connection Restoration Timeouts**: Added timeout handling during session restoration to prevent indefinite hangs
-- 📐 **Terminal Size Checks**: Improved terminal dimension validation to prevent layout issues
+- Resolve "No common key algorithm" failures for RSA-keyed servers by adding `ssh-rsa` host key support for legacy servers
+- Add timeout handling during session restoration to prevent indefinite hangs
+- Improve terminal dimension validation to prevent layout issues
 
 ## [1.2.0] - 2026-03-16
 
-### 🖥️ R-Shell 1.2 — Code Editor, Remote Desktop & Terminal Polish
-
-This release adds a built-in code editor with syntax highlighting, remote desktop protocol support, and several quality-of-life improvements across the terminal and file browser.
-
 ### Added
 
-- ✏️ **CodeMirror-Based Code Editor**: Full-featured in-app code editor for remote files
-  - Syntax highlighting for 15+ languages (JavaScript, TypeScript, Python, Rust, Go, Java, C/C++, SQL, HTML, CSS, JSON, YAML, XML, Markdown, PHP)
-  - One Dark theme integration matching the app's aesthetic
-  - Line numbers, code folding, bracket matching, and auto-completion
-  - Search and replace functionality
-
-- 🖥️ **RDP & VNC Desktop Protocol Clients**: Remote desktop access alongside SSH terminals
-  - Connect to Windows machines via RDP
-  - Connect to VNC servers for graphical remote access
-  - Integrated as tab types within the existing session management
-
-- 📋 **Editor Tab Type in Connection Storage**: Persistent editor tab state
-  - Editor tabs are now tracked in `ActiveConnectionState`
-  - Editor sessions restore correctly on app restart
+- CodeMirror-based in-app code editor for remote files: syntax highlighting for 15+ languages, One Dark theme, line numbers, code folding, bracket matching, auto-completion, and search/replace
+- RDP and VNC desktop protocol clients integrated as tab types alongside SSH terminals
+- Editor tab type tracked in `ActiveConnectionState` so editor sessions restore on restart
 
 ### Fixed
 
-- ⌨️ **macOS Keyboard Shortcuts**: `Cmd` key now correctly maps as `Ctrl` equivalent
-  - Layout shortcuts (`Cmd+B`, `Cmd+J`, `Cmd+M`, `Cmd+Z`) work reliably on macOS
-  - Consistent cross-platform shortcut behavior
-
-- 🎨 **Terminal Text Selection Visibility**: Theme-aware selection colors
-  - Selected text in terminals now uses proper contrast colors
-  - Works correctly in both light and dark themes
-
-- 📂 **File Browser Context Menu**: Selection clears when context menu closes
-  - Prevents stale selection state after dismissing the menu
+- Map `Cmd` to the `Ctrl` equivalent on macOS so layout shortcuts (`Cmd+B/J/M/Z`) work reliably
+- Use theme-aware contrast colors for terminal text selection in both light and dark themes
+- Clear file browser selection when the context menu closes
 
 ## [1.1.0] - 2026-03-01
 
-### 📂 R-Shell 1.1 — SFTP/FTP File Management & Developer Tooling
-
-This release introduces a full-featured dual-pane file manager with SFTP and FTP support, FileZilla-style directory synchronization, a redesigned Log Monitor, and a robust ESLint v10 setup with type-aware checking.
-
 ### Added
 
-- 📁 **Dual-Pane SFTP/FTP File Browser**: FileZilla-inspired file manager with transfer queue
-  - Side-by-side local and remote pane navigation
-  - Drag-and-drop file transfers between panes
-  - Transfer queue with pause, resume, and cancel support
-  - Progress tracking per file and overall queue
-
-- 🔄 **FileZilla-Style Directory Synchronization**: Sync local and remote directories
-  - One-way and two-way sync modes
-  - Conflict detection and resolution UI
-  - Dry-run preview before applying changes
-
-- 📤 **Recursive Directory Upload/Download**: Context menu actions for bulk transfers
-  - Recursively upload entire local directories to remote
-  - Recursively download entire remote directories locally
-
-- 📋 **"Open in Log Monitor" from File Browser**: Direct log file viewing from context menu
-  - Right-click any remote file to open it in the Log Monitor
-  - Seamless integration between file browser and log viewer
-
-- 🗂️ **FileZilla-Style Navigation in Integrated File Browser**: Bookmark bar and breadcrumb navigation
-  - Path input bar with history
-  - Quick bookmarks for frequently accessed directories
-
-- 🔍 **Redesigned Log Monitor**: Business-grade log viewer rebuilt from scratch
-  - Real-time log tailing with configurable refresh intervals
-  - Syntax highlighting for common log formats
-  - Filtering, search, and line-range selection
-
-- 🛡️ **ESLint v10 with Type-Aware Checking**: Full linting setup for the codebase
-  - `typescript-eslint` with type-aware rules (`no-unsafe-*`)
-  - `react-hooks` v7 plugin with new `set-state-in-effect`, `refs`, `purity` rules
-  - `react-refresh` plugin for HMR safety
-  - All existing lint errors resolved
-
-### Fixed
-
-- ⌨️ **Space Key & IME Input Swallowed in Terminal**: Prevented input loss during fast typing and CJK composition
-  - `attachCustomKeyEventHandler` now bails out during IME composition (`isComposing`/`keyCode 229`)
-  - React capture-phase `onKeyDown` no longer calls `preventDefault()` on textarea events
-  - Removed `console.log` and per-keystroke allocations from the `onData` hot path
-
-- 🔒 **FTP Credentials Anonymized in Tests**: Sensitive test credentials replaced with placeholders to prevent accidental exposure
+- Dual-pane SFTP/FTP file browser with side-by-side local/remote panes, drag-and-drop transfers, and a transfer queue with pause/resume/cancel and progress tracking
+- Directory synchronization with one-way and two-way modes, conflict detection/resolution, and dry-run preview
+- Recursive directory upload and download via context menu
+- "Open in Log Monitor" action from the file browser
+- Bookmark bar and breadcrumb navigation with path history in the integrated file browser
+- Rebuilt Log Monitor with real-time tailing, configurable refresh, syntax highlighting, filtering, search, and line-range selection
+- ESLint v10 setup with type-aware `typescript-eslint` rules, `react-hooks` v7, and `react-refresh`; resolved all existing lint errors
 
 ### Changed
 
-- 📝 **README & Welcome Screen Rewritten**: Refreshed documentation and onboarding UI for v1.0.0 feature set
+- Rewrite the README and welcome screen for the v1.0.0 feature set
+
+### Fixed
+
+- Prevent space-key and IME input loss in the terminal: bail out during IME composition (`isComposing` / keyCode 229), stop calling `preventDefault()` on textarea events in the capture phase, and remove per-keystroke allocations from the `onData` path
+- Replace sensitive FTP test credentials with placeholders
 
 ## [1.0.0] - 2026-02-28
 
-### 🎉 R-Shell 1.0 — Stable Release
-
-This is the first stable major release of R-Shell, marking it as production-ready after months of iterative development. This release introduces a fully redesigned VS Code-style terminal group system, improved connection resilience, and a polished UI experience.
-
 ### Added
 
-- 🖥️ **VS Code-Style Terminal Groups**: Complete rewrite of the terminal layout system
-  - Split terminals horizontally and vertically with keyboard shortcuts
-  - Drag-and-drop tabs between terminal groups
-  - Recursive grid-based renderer for nested group layouts
-  - Tab bar per group with context menu actions
-  - Drop zone overlays for intuitive tab organization
-  - Terminal group state serialization and restoration across sessions
-
-- 🔄 **Reconnect from Context Menu**: Right-click any terminal tab to reconnect a disconnected session
-  - Quick reconnection without opening the connection dialog
-  - Available directly from the terminal tab context menu
-
-- 📖 **AI Agent Guide (AGENTS.md)**: Comprehensive project documentation for AI coding agents
-  - Full architecture overview, build instructions, and coding conventions
-  - State and data flow documentation for terminal groups and connections
-  - Key file index, dependency summary, and common pitfalls
-
-### Fixed
-
-- 🎯 **Active Group Switching**: Clicking terminal output area now correctly switches the active group focus
-- 🖼️ **Welcome Screen & Sidebar Polish**: Right sidebar hides when no terminal is open; improved welcome screen layout
-- 💬 **Tooltip Rendering**: Fixed tooltip content being partially obscured by arrow overlay
-- 📏 **Terminal Height Measurement**: Added padding wrapper to correct FitAddon height calculation in PTY terminals
-- 🔌 **WebSocket Cleanup**: Ensure WebSocket closes on disconnection to prevent stale PTY state
-- ⚡ **Connection Management**: Enhanced terminal connection lifecycle and UI responsiveness
+- VS Code-style terminal groups: horizontal/vertical splits with keyboard shortcuts, drag-and-drop tabs between groups, recursive grid layout, per-group tab bar with context menu, drop-zone overlays, and layout serialization/restoration
+- Reconnect a disconnected session from the terminal tab context menu
+- `AGENTS.md` project guide covering architecture, build instructions, conventions, data flow, and key files
 
 ### Changed
 
-- 🏗️ **Terminal Architecture**: Migrated from flat tab list to reducer-based terminal group state management
-  - `TerminalGroupProvider` context with `useTerminalGroups()` hook
-  - Actions: `ADD_TAB`, `REMOVE_TAB`, `SPLIT_GROUP`, `ACTIVATE_TAB`, `MOVE_TAB`
-  - Persistent layout serialization to localStorage
+- Migrate terminal state from a flat tab list to reducer-based terminal groups (`TerminalGroupProvider`, `useTerminalGroups()`, actions `ADD_TAB` / `REMOVE_TAB` / `SPLIT_GROUP` / `ACTIVATE_TAB` / `MOVE_TAB`, localStorage persistence)
+- Add `AGENTS.md` and `copilot-instructions.md` for contributor onboarding
 
-- 📦 **Project Documentation**: Added AGENTS.md for AI agent onboarding and copilot-instructions.md for GitHub Copilot
+### Fixed
+
+- Switch the active group when clicking the terminal output area
+- Hide the right sidebar when no terminal is open and polish the welcome screen layout
+- Fix tooltip content obscured by the arrow overlay
+- Add a padding wrapper to correct FitAddon height measurement in PTY terminals
+- Close the WebSocket on disconnection to prevent stale PTY state
+- Improve terminal connection lifecycle and UI responsiveness
 
 ## [0.7.1] - 2026-02-10
 
 ### Fixed
 
-- 🖥️ **Terminal Padding**: Added padding to PTY terminal container for better layout and visual spacing
-- 📋 **Duplicate Paste Fix**: Fixed duplicate paste being triggered when using the copy command
+- Add padding to the PTY terminal container for better spacing
+- Fix duplicate paste triggered by the copy command
 
 ## [0.7.0] - 2026-02-08
 
 ### Added
 
-- 🔄 **Auto-Update Support**: Integrated Tauri updater plugin for automatic application updates
-  - Background update checking on application startup
-  - Manual update check via Help menu
-  - User notification system for available updates
-
-- 🖱️ **Terminal Context Menu**: Right-click context menu for terminal operations
-  - Copy, paste, select all, and clear terminal operations
-  - Search functionality accessible from context menu
-  - Keyboard shortcuts integration
-
-- 📋 **Terminal Search Bar**: Enhanced terminal search capabilities
-  - Find text within terminal output
-  - Case-sensitive and regex search options
-  - Navigation between search results
-
-- 📂 **File Browser Sorting**: Added comprehensive sorting functionality to integrated file browser
-  - Sort by name, size, or modification date
-  - Ascending and descending order options
-  - Visual indicators for current sort state
-
-- 🌐 **Dynamic WebSocket Port**: Implemented dynamic port assignment for WebSocket server
-  - Automatic port selection to avoid conflicts
-  - Port retrieval command for frontend connection
-  - Improved reliability for PTY terminal connections
+- Auto-update support via the Tauri updater plugin: background checks on startup, manual check from the Help menu, and update notifications
+- Terminal context menu with copy, paste, select all, clear, and search
+- Terminal search bar with case-sensitive and regex options and result navigation
+- File browser sorting by name, size, or modification date, ascending or descending, with current-sort indicators
+- Dynamic WebSocket port assignment to avoid conflicts, with a port-retrieval command for the frontend
 
 ### Changed
 
-- 🔧 **Session → Connection Renaming**: Comprehensive refactoring for semantic correctness
-  - Renamed all "session" references to "connection" throughout the codebase
-  - Updated storage layer: `session-storage.ts` → `connection-storage.ts`
-  - Automatic migration from old session storage format
-  - Standardized connection ID and path parameter naming
-
-- 💾 **GPU Memory Display**: Enhanced GPU monitoring to show memory usage in MiB for better readability
-
-- 📖 **Documentation Updates**: Updated README with new screenshots and feature descriptions
+- Rename "session" to "connection" throughout the codebase (`session-storage.ts` → `connection-storage.ts`) with automatic migration from the old format
+- Show GPU memory usage in MiB for readability
+- Update the README with new screenshots and feature descriptions
 
 ## [0.6.4] - 2026-01-29
 
 ### Added
 
-- 🎮 **GPU Monitoring**: Full GPU detection and monitoring functionality
-  - Multi-GPU support with dropdown selection for systems with multiple GPUs
-  - Real-time GPU usage, memory, and temperature monitoring
-  - Combined usage history chart showing all GPUs together
-  - Automatic GPU detection via system commands
-
-- 🌐 **Network Interface Selection**: Enhanced network bandwidth monitoring
-  - Dropdown selection to choose specific network interfaces
-  - Monitor individual interface traffic (Wi-Fi, Ethernet, etc.)
-  - Better visibility into network activity per interface
-
-- 🔄 **Connection Reconnect**: Added reconnect functionality to connection tabs
-  - Quick reconnect button for disconnected sessions
-  - Reconnect count tracking to monitor connection stability
-  - Improved connection recovery workflow
-
-- 📊 **Connection Status Management**: Enhanced terminal connection status tracking
-  - Real-time connection status indicators
-  - Better visibility into connection health
-  - Improved disconnect/reconnect handling
+- GPU monitoring with multi-GPU selection, real-time usage/memory/temperature, a combined usage-history chart, and automatic detection
+- Network interface selection for per-interface bandwidth monitoring (Wi-Fi, Ethernet, etc.)
+- Reconnect action on connection tabs with reconnect-count tracking
+- Real-time connection status indicators
 
 ### Fixed
 
-- 🎨 **CSS Syntax**: Corrected anchor tag styling syntax issue_
+- Correct anchor tag styling syntax
 
 ## [0.6.3] - 2026-01-23
 
 ### Added
 
-- ✏️ **Connection Editing**: Added ability to edit existing connections from connection manager
-  - Load existing connection details into connection dialog
-  - Update connection configurations with proper form state
-  - Automatically activate existing tabs when editing connections
-  - Loading states and error handling for edit operations
-
-- ⏱️ **Connection Timeout**: Added 3-second timeout for SSH client connections
-  - Better error handling for unresponsive connections
-  - Prevents indefinite connection attempts
-  - Improved user feedback during connection failures
-
-### Fixed
-
-- 🖼️ **Terminal Background Image**: Fixed background images not appearing on already-opened terminals
-  - Properly switches from WebGL to canvas renderer when background image is added
-  - Avoids unnecessary terminal re-creation for other appearance changes
-  - Fixed issue where images only showed at edges while main area remained dark
-  - Smart renderer selection based on background image state
+- Edit existing connections from the connection manager, with form state, loading states, and error handling
+- 3-second SSH client connection timeout to avoid indefinite attempts
 
 ### Changed
 
-- 🔄 **UI Terminology Update**: Renamed "Session Manager" to "Connection Manager" throughout the application
-  - Updated all UI labels, tooltips, and menu items for consistency
-  - Renamed SessionManager component to ConnectionManager
-  - Updated keyboard shortcuts and settings to reflect new naming
-  - More accurate terminology for managing SSH connections
+- Rename "Session Manager" to "Connection Manager" across UI labels, tooltips, menus, shortcuts, and settings (component renamed `SessionManager` → `ConnectionManager`)
+- Update and activate existing tabs when confirming a connection; hide "Save as session" when editing
+- Update the README for the connection manager naming
 
-- 🗂️ **Tab Management**: Enhanced tab handling for connection dialog
-  - Updates and activates existing tabs when confirming connection
-  - Hides "Save as session" option when editing existing sessions
-  - Better session update workflow
+### Fixed
 
-- 📚 **Documentation**: Updated README to reflect connection manager naming
+- Switch from WebGL to canvas renderer when a terminal background image is added so images appear on already-open terminals
 
 ## [0.6.2] - 2026-01-17
 
 ### Added
 
-- 💾 **Panel Auto-Save**: Resizable panels now automatically save their sizes to localStorage
-  - Remembers panel dimensions across sessions
-  - Per-panel-group persistence for customized layouts
-  - Improved user experience with layout state preservation
-
-### Fixed
-
-- 📁 **Session Folder Selection**: Fixed folder dropdown in connection dialog
-  - Now shows only valid folders from the session manager hierarchy
-  - Filters out orphaned or deleted folders
-  - Consistent folder display with session manager tree structure
-  - Improved folder selection UI with cleaner presentation
-
-- 🎨 **Chart Theming**: Updated chart text color to use `currentColor`
-  - Better support for light/dark theme transitions
-  - More consistent visual appearance across themes
-  - Fixed chart text readability issues
-
-- 🔌 **Connection Dialog State**: Reset connection state on dialog open/close
-  - Improved cancel button behavior during connection attempts
-  - Better state cleanup when dismissing dialog
-  - Enhanced connection workflow reliability
+- Auto-save resizable panel sizes to localStorage, per panel group
 
 ### Changed
 
-- 🖱️ **Resizable Panel Cursors**: Improved cursor styles for better visual feedback
-  - Enhanced resize handle visibility and interaction
-  - More intuitive drag experience
-  - Added custom cursor styles for horizontal/vertical resize
+- Improve resize-handle cursors and visibility for clearer feedback
+- Add `getValidFolders()` to session storage to filter orphaned folders
 
-- 🔧 **Session Storage**: Added `getValidFolders()` method to filter orphaned folders
-  - Better synchronization between connection dialog and session manager
-  - More reliable folder hierarchy management
+### Fixed
+
+- Show only valid folders in the connection dialog's folder dropdown
+- Use `currentColor` for chart text to support light/dark transitions
+- Reset connection state on dialog open/close and improve cancel behavior
 
 ## [0.6.1] - 2026-01-10
 
 ### Added
 
-- 🍺 **Homebrew Distribution**: Official Homebrew cask support for macOS
-  - Easy installation via `brew install --cask r-shell`
-  - Automated release workflow with checksum generation
-  - Auto-updating Homebrew tap on new releases
-  - Support for both Intel and Apple Silicon Macs
+- Official Homebrew cask for macOS (`brew install --cask r-shell`) with automated checksum generation and tap updates, supporting Intel and Apple Silicon
 
 ### Changed
 
-- 📦 **Release Pipeline Improvements**:
-  - Added SHA256 checksum generation for all release assets
-  - Automated Homebrew tap updates via GitHub Actions
-  - Enhanced release workflow with proper dependency management
-  - Improved release asset naming and organization
-
-- 📚 **Documentation Updates**:
-  - Updated README with Homebrew installation instructions
-  - Cleaned up obsolete documentation files
-  - Streamlined project documentation structure
-
-### Infrastructure
-
-- ✨ Created `homebrew-tap` repository for distribution
-- 🔄 Automated cask formula updates on releases
-- 🔐 Secure token-based repository dispatch for tap updates
-- 📊 Enhanced CI/CD pipeline for release management
+- Improve the release pipeline: SHA256 checksums for all assets, automated Homebrew tap updates via GitHub Actions, better asset naming, and a new `homebrew-tap` repository with secure token-based dispatch
+- Update the README with Homebrew installation instructions and clean up obsolete docs
 
 ## [0.6.0] - 2026-01-03
 
 ### Added
 
-- ⚡ **Quick Connect Dropdown**: Fast access to recently connected servers
-  - Dropdown menu for quick reconnection to recent servers
-  - Streamlined workflow for frequently used connections
-  - Reduces time needed to establish common connections
-
-- 🎨 **Terminal Background Image Support**: Customizable terminal appearance
-  - Add background images to terminal windows
-  - Configurable background settings in terminal preferences
-  - Enhance visual customization of your workspace
-
-- 🌓 **Enhanced Theme Management**: Comprehensive theme system with persistence
-  - localStorage-based settings persistence across sessions
-  - Theme preferences automatically saved and restored
-  - Improved theme consistency throughout the application
-
-- ✨ **UI Component Enhancements**:
-  - Updated slider components with new color scheme
-  - Updated switch components with refined styling
-  - Enhanced scrollbar styles for better appearance
-  - Improved visual experience in both light and dark modes
-  - Dynamic terminal appearance updates based on settings changes
+- Quick Connect dropdown for fast reconnection to recent servers
+- Terminal background image support with configurable settings
+- Theme management with localStorage persistence across sessions
+- UI refinements: updated slider, switch, and scrollbar styling, with dynamic terminal appearance updates
 
 ### Changed
 
-- 📦 Updated @tauri-apps/api to version 2.9.1
-- 📦 Updated @tauri-apps/cli to version 2.9.6
-- 🎨 Improved visual consistency across all UI components
-- ⚙️ Better integration between settings and terminal appearance
+- Update `@tauri-apps/api` to 2.9.1 and `@tauri-apps/cli` to 2.9.6
+- Improve visual consistency and settings/terminal integration
 
 ### Fixed
 
-- 🐛 Theme persistence issues resolved
-- 🎨 Scrollbar rendering improvements
-- ✨ Settings modal synchronization with terminal display
+- Resolve theme persistence issues
+- Improve scrollbar rendering
+- Sync the settings modal with the terminal display
 
 ## [0.5.0] - 2025-12-23
 
 ### Added
 
-- 🔄 **Duplicate SSH Connection Tabs**: Right-click any active tab to duplicate it and create a new connection to the same server
-  - Duplicated tabs appear right after the original tab
-  - Full session state persistence - duplicates are restored on app restart
-  - Maintains correct tab order and names across app restarts
-  - Accessible via context menu (right-click on tab) or Session menu
-  - Smart credential handling - reuses saved credentials from the original session
-  - Support for chaining - can duplicate already-duplicated tabs
-
-- 📡 **Enhanced Network Latency Monitoring**: Real-time SSH connection latency measurement
-  - Live latency statistics displayed in system monitor
-  - Helps identify network performance issues
-  - Integrated with existing system monitoring
-
-- 🎨 **Layout Panel Resize State Management**: Panel sizes are now remembered
-  - Resizable panels maintain their size across sessions
-  - Smooth resizing experience with state persistence
-  - Applies to left sidebar, right sidebar, and bottom panel
-
-- ⚡ **Improved Session Restoration**: Enhanced overlay with detailed progress
-  - Real-time progress indicator showing which session is being restored
-  - Current target display with host and username information
-  - Visual progress bar with percentage completion
-  - Better error handling and reporting for failed restorations
-
-- 🚫 **Cancel Connection Functionality**: Ability to cancel in-progress connections
-  - Stop connection attempts that are taking too long
-  - Clean cancellation without leaving orphaned connections
-  - Improved connection state management
+- Duplicate SSH connection tabs via context menu or the Session menu, with full state persistence, correct ordering across restarts, credential reuse, and chained duplication
+- Real-time SSH connection latency monitoring in the system monitor
+- Persist resizable panel sizes for the left/right sidebars and bottom panel
+- Detailed session-restoration overlay with per-session progress, target host/username, a progress bar, and error reporting
+- Cancel in-progress connections cleanly without leaving orphaned connections
 
 ### Changed
 
-- 📊 Improved session restoration UI with more informative feedback
-- 🔧 Enhanced connection handling with better error recovery
-- ✨ UI polish for connection dialogs and session management
+- More informative session-restoration UI
+- Better connection error recovery
+- UI polish for connection dialogs and session management
 
 ### Fixed
 
-- 🐛 Connection stability improvements
-- 🔄 Better handling of duplicate session credentials
-- 📁 Session state persistence edge cases
+- Connection stability improvements
+- Better handling of duplicate session credentials
+- Session state persistence edge cases
 
 ## [0.4.0] - 2025-11-27
 
 ### Added
 
-- 🔐 SSH key authentication support for new and saved connections.
-- 🎨 Theme customization controls for light, dark, and high-contrast layouts.
-- 🔍 Command history search so every session can surface previous inputs quickly.
-- 🌍 Multi-language (i18n) support for the core UI.
-- 🧩 Plugin system foundations that let users extend sessions and workflows.
-- 🧪 Batch command execution across sessions with grouped controls.
-- 🌐 Port forwarding utilities for exposing remote services locally.
+- SSH key authentication for new and saved connections
+- Theme customization for light, dark, and high-contrast layouts
+- Command history search
+- Multi-language (i18n) support for the core UI
+- Plugin system foundations
+- Batch command execution across sessions with grouped controls
+- Port forwarding utilities for exposing remote services locally
 
 ### Changed
 
-- ✨ UI polish across session tabs, the system monitor, and the toolbar to feel smoother.
-- 🧰 Dependency updates that keep the frontend, Tauri backend, and terminal utilities current.
+- UI polish across session tabs, the system monitor, and the toolbar
+- Dependency updates for the frontend, Tauri backend, and terminal utilities
 
 ### Fixed
 
-- 🛠 Stability and connection resiliency improvements for session management.
+- Stability and connection resiliency improvements for session management
 
 ## [0.3.0] - 2025-11-17
 
 ### Added
-- 🚀 New features and improvements
-- 📦 Package updates and dependency optimizations
-- 🎯 Enhanced user experience
+
+- New features and improvements
+- Package updates and dependency optimizations
 
 ### Changed
-- 🔄 Codebase refinements and optimizations
-- 📚 Documentation updates
+
+- Codebase refinements and optimizations
+- Documentation updates
 
 ### Fixed
-- 🐛 Bug fixes and stability improvements
+
+- Bug fixes and stability improvements
 
 ## [0.2.0] - 2025-11-17
 
 ### Added
-- 🎨 Enhanced UI components and styling improvements
-- 📋 Improved session management interface
-- ✨ Better error handling and user feedback
-- 🔧 Additional terminal customization options
+
+- Enhanced UI components and styling
+- Improved session management interface
+- Better error handling and user feedback
+- Additional terminal customization options
 
 ### Changed
-- ⚡ Performance optimizations for terminal rendering
-- 🔄 Improved session state persistence
-- 📊 Enhanced system monitoring display
+
+- Performance optimizations for terminal rendering
+- Improved session state persistence
+- Enhanced system monitoring display
 
 ### Fixed
-- 🐛 Various bug fixes and stability improvements
-- 🔧 Terminal display issues on some platforms
-- 📁 File browser navigation edge cases
+
+- Various bug fixes and stability improvements
+- Terminal display issues on some platforms
+- File browser navigation edge cases
 
 ## [0.1.0] - 2025-10-30
 
 ### Added
-- 🎉 Initial release of R-Shell
-- 🖥️ Multi-session SSH connection management with tabbed interface
-- 📁 Integrated file browser for remote file management
-- 📊 Real-time system monitoring (CPU, Memory, Disk, Processes)
-- ⚙️ Process management with kill functionality
-- 🔐 Password-based SSH authentication
-- 💾 Connection profile management (save, load, edit, delete)
-- 🎨 Modern UI built with React 19, TypeScript, and Tailwind CSS
-- 🦀 High-performance backend using Rust and Tauri 2
-- 📱 Responsive resizable panel layout
-- 🔔 Toast notifications for user feedback
-- ⌨️ Terminal emulator with xterm.js
-- 🔄 Session state persistence
-- 📝 Comprehensive documentation and guides
-- 🤖 AI-assisted development workflow
-- 🎨 Figma-generated frontend components
 
-### Technical Details
+- Initial release of R-Shell
+- Multi-session SSH connection management with a tabbed interface
+- Integrated file browser for remote file management
+- Real-time system monitoring (CPU, memory, disk, processes)
+- Process management with kill support
+- Password-based SSH authentication
+- Connection profile management (save, load, edit, delete)
+- UI built with React 19, TypeScript, and Tailwind CSS
+- Rust + Tauri 2 backend
+- Responsive resizable panel layout
+- Toast notifications
+- xterm.js terminal emulator
+- Session state persistence
+
+### Technical details
+
 - Frontend: React 19, TypeScript, Vite, Tailwind CSS
 - Backend: Rust, Tauri 2.0
-- UI Components: Radix UI primitives
+- UI components: Radix UI primitives
 - Terminal: xterm.js
 - Icons: Lucide React
-- State Management: React hooks
-- File Browser: Custom implementation with SFTP support
-- System Monitor: Real-time stats via SSH commands
+- File browser: custom implementation with SFTP support
 
-### Known Issues
+### Known issues
+
 - Process list refresh interval is fixed at 5 seconds
-- No support for SSH key authentication yet
+- No SSH key authentication yet
 - Limited error handling for network interruptions
 - Terminal history not persisted between sessions
-
-### Development Notes
-- This release demonstrates the vibing coding methodology
-- Frontend UI generated from Figma designs using Figma Make
-- Entire development powered by GitHub Copilot
-- Experimental project exploring AI-assisted development capabilities
 
 ## Contributing
 
@@ -693,4 +421,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this 
 
 ## License
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.

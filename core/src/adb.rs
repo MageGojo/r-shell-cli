@@ -26,8 +26,16 @@ use tokio::process::Command;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
+use crate::adb_bin::adb_program;
 use crate::pty::PtySession;
 use crate::ssh::SftpEntry;
+
+/// 构造一个指向「已解析的 adb 可执行文件」的命令(内嵌优先,见 [`crate::adb_bin`])。
+///
+/// 全模块统一用它替代裸名调用 adb,使「生产环境找不到 adb」一处修复、全量生效。
+fn adb_cmd() -> Command {
+    Command::new(adb_program())
+}
 
 /// 一个安卓设备的 ADB 客户端(`serial = host:port`)。
 pub struct AdbClient {
@@ -47,7 +55,7 @@ impl AdbClient {
     /// 强制开启开发者模式。设备处于 `unauthorized` / `offline` 时返回清晰错误。
     pub async fn connect(&mut self) -> Result<()> {
         // 让本机 adb daemon 主动连一次(已连则幂等;网络 adb 必需)。
-        let _ = Command::new("adb")
+        let _ = adb_cmd()
             .args(["connect", &self.serial])
             .output()
             .await;
@@ -80,7 +88,7 @@ impl AdbClient {
     /// 查询 `adb -s <serial> get-state`,返回去空白后的状态字符串
     /// (`device` / `unauthorized` / `offline` / `""`)。
     async fn device_state(&self) -> Result<String> {
-        let out = Command::new("adb")
+        let out = adb_cmd()
             .args(["-s", &self.serial, "get-state"])
             .output()
             .await
@@ -116,7 +124,7 @@ impl AdbClient {
     /// `cmd` 作为**单个参数**传给 adb,由设备端 `sh -c` 解析,因此可包含管道 / 分号 /
     /// 重定向(监控命令依赖这一点)。
     pub async fn execute_command(&self, command: &str) -> Result<String> {
-        let out = Command::new("adb")
+        let out = adb_cmd()
             .args(["-s", &self.serial, "shell", command])
             .output()
             .await
@@ -160,7 +168,7 @@ impl AdbClient {
     /// 动态 resize 暂不支持(adb CLI 无运行时改窗口尺寸的接口),`resize_tx` 收到的
     /// 请求被静默丢弃。
     pub async fn create_pty_session(&self, _cols: u32, _rows: u32) -> Result<PtySession> {
-        let mut child = Command::new("adb")
+        let mut child = adb_cmd()
             .args(["-s", &self.serial, "shell", "-t", "-t"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -313,7 +321,7 @@ impl AdbClient {
             .unwrap_or(0);
         on_progress(0, total);
 
-        let out = Command::new("adb")
+        let out = adb_cmd()
             .args(["-s", &self.serial, "push", local, remote])
             .output()
             .await
@@ -336,7 +344,7 @@ impl AdbClient {
         let total = self.remote_size(remote).await;
         on_progress(0, total);
 
-        let out = Command::new("adb")
+        let out = adb_cmd()
             .args(["-s", &self.serial, "pull", remote, local])
             .output()
             .await
@@ -357,7 +365,7 @@ impl AdbClient {
 
     /// 读取远端文件全部内容到内存(`adb exec-out cat`,二进制安全)。
     pub async fn read_file(&self, remote: &str) -> Result<Vec<u8>> {
-        let out = Command::new("adb")
+        let out = adb_cmd()
             .args(["-s", &self.serial, "exec-out", "cat", remote])
             .output()
             .await
@@ -396,7 +404,7 @@ impl AdbClient {
 /// (端口是随机的,**不是**连接用的 5555);`code` 是同一弹窗里的 6 位配对码。
 /// 配对只需做一次,成功后该设备会信任本机密钥,后续用 [`connect_device`] 连 5555 即可。
 pub async fn pair(host_port: &str, code: &str) -> Result<String> {
-    let out = Command::new("adb")
+    let out = adb_cmd()
         .args(["pair", host_port, code])
         .output()
         .await
@@ -420,7 +428,7 @@ pub async fn pair(host_port: &str, code: &str) -> Result<String> {
 
 /// 主动连接网络 adb 设备:`adb connect <host:port>`(`host_port` 用连接端口,通常 5555)。
 pub async fn connect_device(host_port: &str) -> Result<String> {
-    let out = Command::new("adb")
+    let out = adb_cmd()
         .args(["connect", host_port])
         .output()
         .await

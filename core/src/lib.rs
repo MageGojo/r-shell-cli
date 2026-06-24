@@ -12,12 +12,14 @@
 //! - [`pty`]            — backend-agnostic interactive PTY session handle
 //! - [`ssh`]            — SSH client, PTY sessions, SFTP (russh)
 //! - [`adb`]            — ADB client for Android devices (`adb` subprocess)
+//! - [`adb_bin`]        — locate the `adb` executable (bundled-first, PATH/SDK fallback)
 //! - [`native_backend`] — connection manager over [`ssh`] / [`adb`]
 //! - [`monitor`]        — remote system-resource snapshots
 //! - [`blockexec`]      — Warp-style "command block" exec helpers (wrap/parse/local)
 //! - [`mcp`]            — local MCP (Model Context Protocol) server
 
 pub mod adb;
+pub mod adb_bin;
 pub mod blockexec;
 pub mod connections;
 pub mod local;

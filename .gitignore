@@ -13,6 +13,9 @@ target
 dist
 .qoder
 
+# Bundled adb cache (populated by scripts/fetch_adb.sh at build time; ~20MB each)
+vendor/adb/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -121,3 +121,32 @@ workspace 已加 ADB 连接：`安卓手机 (Redmi 220233L2C)` = `192.168.0.101:
   3. 一行命令回到稳定 5555：`adb -s <mdns或当前口> tcpip 5555 && adb connect 192.168.0.101:5555`。
 - **彻底固化需 root**：若设备 root，可 `adb root` 后写 `adb_keys` + `setprop persist.adb.tcp.port 5555`，重启即自动网络 adb（待设备 root 后再做）。
 - harden（`development_settings_enabled` / `adb_enabled` / `stay_on_while_plugged_in`）每次连接 best-effort 执行，无需 root，缓解「开发者模式被关」。
+
+## 7. 内嵌 adb · 零环境交付（2026-06-24 ✅）
+
+> 决策来源：用户「开发能连安卓、生产环节连不上 → 内嵌会更稳，直接内嵌，且内嵌了要能直接用、不依赖其它环节」。
+
+### 7.1 根因
+ADB 后端一律 `Command::new("adb")`，只靠系统 `PATH` 找 adb。开发时从终端 / `cargo run` 启动，继承 shell 完整 PATH（含 Homebrew、SDK platform-tools），能找到；**生产时 GUI 从 Finder/Dock 启动（macOS）只拿到 launchd 最小 PATH `/usr/bin:/bin:/usr/sbin:/sbin`、不读 `.zshrc`**，看不到 Homebrew/SDK 里的 adb；交付给别人的干净机更是压根没装 → `Command::new("adb")` 直接 `ENOENT`，表现为「连不上安卓」。
+
+### 7.2 解法：内嵌优先的 adb 解析器（`core/src/adb_bin.rs`）
+新增 `adb_bin::adb_program()`（进程级解析一次后缓存），`adb.rs` 全部 `Command::new("adb")` 改走它。解析顺序：
+1. 显式覆盖 `CONCH_ADB` / `R_SHELL_ADB` / `ADB_PATH`；
+2. **随应用内嵌**（相对 `current_exe`）：macOS `Contents/Resources/adb/adb`、Windows/Linux 可执行同级 `adb/adb[.exe]`；命中时 best-effort 补 `+x` / 去 `com.apple.quarantine`；
+3. `$ANDROID_HOME` / `$ANDROID_SDK_ROOT` 下 `platform-tools/adb`；
+4. `PATH` 查找；
+5. 各平台常见安装目录；全落空才回退裸名 `adb`（保旧行为，CLI 零回归）。
+
+### 7.3 打包内嵌（把 adb 一起带上）
+- **macOS** `scripts/build_mac.sh`（新）：`flutter build macos` → 拷 adb 进 `Conch.app/Contents/Resources/adb/adb` → ad-hoc 重签（adb + 整包 `--deep`，加文件会破坏原签名封印）→ `ditto` 压 `dist/Conch-macos.zip`。内嵌的 adb 是 **universal（x86_64+arm64）且仅依赖系统库**（`otool -L` 仅 `/usr/lib`+`/System`）→ Intel/Apple Silicon 干净机双双即用。
+- **Windows** `scripts/build_win.ps1`（扩展）：把 `adb.exe` + `AdbWinApi.dll` + `AdbWinUsbApi.dll` 拷进 `Release\adb\`（adb.exe 运行依赖那两个 dll）；zip 与 NSIS（`File /r`）整目录打包自动带上。
+- **adb 来源** `scripts/fetch_adb.sh`（新）：缓存 `vendor/adb/<plat>/` 命中即用，否则下载 Google 官方 platform-tools（darwin 兜底拷本机 adb）；`vendor/adb/` 已入 `.gitignore`。
+
+### 7.4 验证（本机 macOS，2026-06-24）
+- `cargo test -p r-shell-core` **57 通过**（含 `adb_bin` 3 新测：mac `.app` Resources 落点 / exe 同级 / PATH 查找）。
+- 把诊断器 `core/examples/adb_which.rs`（打印解析到的 adb 路径 + `adb version`）拷进 `Conch.app/Contents/MacOS/` 内运行：解析结果 = **内嵌副本** `…/Conch.app/Contents/Resources/adb/adb`（而非 Homebrew 那个），`adb version` 正常。
+- `build_mac.sh` 自检：内嵌 adb 跑通 + 「deps OK（仅 /usr/lib 与 /System 系统库）」。
+
+### 7.5 注意
+- 内嵌 adb 首次命令会拉起本机 adb server（5037）；若机器另有不同版本 adb server，会自动「kill 后重启」（adb 正常行为，无需人工）。默认不改端口以最大化兼容。
+- adb 二进制「内嵌即可用」；**安卓侧仍需手机开启无线调试 / USB 调试并授权**（这是设备侧前置，非本机环境问题）。

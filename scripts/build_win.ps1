@@ -57,6 +57,36 @@ foreach ($d in $need) {
   else      { Write-Host "  [MISS] $d" }
 }
 
+# 2.5) 内嵌 adb(零环境交付:干净机没装 Android SDK 也能连安卓)。
+#      程序优先用内嵌 adb(见 core/src/adb_bin.rs);adb.exe 运行依赖同目录的两个 dll。
+$adbCache = Join-Path $repo 'vendor\adb\windows'
+$adbExe   = Join-Path $adbCache 'adb.exe'
+if (-not (Test-Path $adbExe)) {
+  Write-Host "== fetch adb (platform-tools)..."
+  New-Item -ItemType Directory -Force -Path $adbCache | Out-Null
+  $tmp = Join-Path $env:TEMP ("pt-" + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+  $zip = Join-Path $tmp 'platform-tools.zip'
+  $url = 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip'
+  try {
+    if (Get-Command surge -ErrorAction SilentlyContinue) { & surge $url -o $tmp 2>$null }
+    if (-not (Test-Path $zip)) { Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing }
+    Expand-Archive -Path $zip -DestinationPath $tmp -Force
+    foreach ($f in 'adb.exe','AdbWinApi.dll','AdbWinUsbApi.dll') {
+      Copy-Item (Join-Path $tmp "platform-tools\$f") $adbCache -Force
+    }
+  } finally {
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+$adbOut = Join-Path $rel 'adb'
+New-Item -ItemType Directory -Force -Path $adbOut | Out-Null
+foreach ($f in 'adb.exe','AdbWinApi.dll','AdbWinUsbApi.dll') {
+  $src = Join-Path $adbCache $f
+  if (Test-Path $src) { Copy-Item $src $adbOut -Force; Write-Host "  [adb]  $f" }
+  else                { Write-Host "  [MISS] $f (adb 可能不完整)" }
+}
+
 # 3) 压缩成交付 zip
 $dist = Join-Path $repo 'dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null

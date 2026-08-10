@@ -42,7 +42,8 @@ pub(crate) async fn ensure_session(connection_id: &str) -> Result<(), String> {
 
     let config = r_shell_core::connections::build_ssh_config(&connection, false)
         .map_err(|e| e.to_string())?;
-    mgr.create_connection(connection_id.to_string(), config)
+    let profile = r_shell_core::ios_ssh::ExecProfile::from_connection(&connection);
+    mgr.create_connection_with_profile(connection_id.to_string(), config, Some(profile))
         .await
         .map_err(|e| e.to_string())
 }

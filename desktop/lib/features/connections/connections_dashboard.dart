@@ -363,6 +363,11 @@ class _ConnectionCard extends StatelessWidget {
     final c = connection;
     final status = connStatusFrom(c.status);
     final isAdb = c.protocol == 'ADB';
+    final isIos = !isAdb &&
+        c.tags.any((t) {
+          final lower = t.trim().toLowerCase();
+          return lower == 'platform:ios' || lower == 'ios';
+        });
     return Material(
       color: AppColors.surface3,
       borderRadius: BorderRadius.circular(AppRadius.xl),
@@ -401,12 +406,16 @@ class _ConnectionCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  _protocolBadge(isAdb),
+                  _protocolBadge(isAdb: isAdb, isIos: isIos),
                 ],
               ),
               const SizedBox(height: AppSpacing.s3),
               Text(
-                isAdb ? 'adb · ${c.host}:${c.port}' : '${c.username}@${c.host}:${c.port}',
+                isAdb
+                    ? 'adb · ${c.host}:${c.port}'
+                    : isIos
+                        ? 'ios · ${c.username}@${c.host}:${c.port}'
+                        : '${c.username}@${c.host}:${c.port}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -421,9 +430,11 @@ class _ConnectionCard extends StatelessWidget {
                   Icon(
                     isAdb
                         ? Icons.usb
-                        : (c.authMethod == 'publickey'
-                            ? Icons.vpn_key_outlined
-                            : Icons.password),
+                        : isIos
+                            ? Icons.phone_iphone
+                            : (c.authMethod == 'publickey'
+                                ? Icons.vpn_key_outlined
+                                : Icons.password),
                     size: 12,
                     color: AppColors.textMuted,
                   ),
@@ -431,7 +442,9 @@ class _ConnectionCard extends StatelessWidget {
                   Text(
                     isAdb
                         ? '安卓调试桥'
-                        : (c.authMethod == 'publickey' ? '公钥认证' : '密码认证'),
+                        : isIos
+                            ? 'iOS 越狱 SSH'
+                            : (c.authMethod == 'publickey' ? '公钥认证' : '密码认证'),
                     style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                   ),
                   const Spacer(),
@@ -465,8 +478,17 @@ class _ConnectionCard extends StatelessWidget {
     );
   }
 
-  Widget _protocolBadge(bool isAdb) {
-    final color = isAdb ? AppColors.online : AppColors.accent;
+  Widget _protocolBadge({required bool isAdb, bool isIos = false}) {
+    final color = isAdb
+        ? AppColors.online
+        : isIos
+            ? AppColors.accentTeal
+            : AppColors.accent;
+    final label = isAdb
+        ? 'ADB'
+        : isIos
+            ? 'iOS'
+            : 'SSH';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
@@ -480,8 +502,12 @@ class _ConnectionCard extends StatelessWidget {
             const Icon(Icons.android, size: 11, color: AppColors.online),
             const SizedBox(width: 3),
           ],
+          if (isIos) ...[
+            Icon(Icons.phone_iphone, size: 11, color: color),
+            const SizedBox(width: 3),
+          ],
           Text(
-            isAdb ? 'ADB' : 'SSH',
+            label,
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,

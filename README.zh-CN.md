@@ -248,15 +248,17 @@ r-shell mcp
 ```json
 {
   "mcpServers": {
-    "r-shell": {
-      "url": "http://127.0.0.1:9123/mcp"
+    "conch": {
+      "command": "r-shell",
+      "args": ["mcp", "--stdio"]
     }
   }
 }
 ```
 
-Cursor 写到 `~/.cursor/mcp.json`;Claude Desktop 等客户端把同一个 URL 作为
-Streamable HTTP 服务器添加,然后重启。
+> 若仍用 URL 方式 `http://127.0.0.1:9123/mcp`,需先运行 `r-shell mcp` 或在 Conch App 打开 MCP。macOS 上 Cursor 的 Chromium 网络栈偶发 `net::ERR_FAILED`,**推荐 stdio**。
+
+Cursor 写到 `~/.cursor/mcp.json`;Claude Desktop 等客户端同样可用 stdio 或 Streamable HTTP。
 
 服务器会在多次调用之间保持一条 SSH 会话常驻,这样助手就能反复执行命令、读写文件,
 而不用每次重连。会话只存在内存里,生命周期与 `r-shell mcp` 的运行时间一致。

@@ -22,6 +22,7 @@ pub mod adb;
 pub mod adb_bin;
 pub mod blockexec;
 pub mod connections;
+pub mod ios_ssh;
 pub mod local;
 pub mod mcp;
 pub mod model;

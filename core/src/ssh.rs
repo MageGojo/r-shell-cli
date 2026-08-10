@@ -152,6 +152,72 @@ impl client::Handler for Client {
     }
 }
 
+/// Password auth with keyboard-interactive fallback.
+///
+/// Many OpenSSH / jailbreak hosts advertise both `password` and
+/// `keyboard-interactive`; some only accept the latter (PAM). Try password
+/// first, then answer every kbd-interactive prompt with the same password.
+/// Auth can hang on flaky jailbreak OpenSSH; keep it bounded.
+const SSH_AUTH_TIMEOUT: Duration = Duration::from_secs(15);
+/// Non-interactive exec (MCP / probe). Prevents a stuck channel from wedging
+/// the whole session manager behind a Backend read lock.
+const SSH_EXEC_TIMEOUT: Duration = Duration::from_secs(45);
+
+async fn authenticate_with_password<H: client::Handler + Send>(
+    session: &mut client::Handle<H>,
+    username: &str,
+    password: &str,
+) -> Result<bool>
+where
+    H::Error: From<russh::Error> + Send,
+{
+    let auth = async {
+        match session.authenticate_password(username, password).await {
+            Ok(true) => return Ok(true),
+            Ok(false) => {}
+            Err(error) => {
+                // Fall through to keyboard-interactive; some servers reject the
+                // password method outright before kbd-interactive succeeds.
+                eprintln!("[ssh] password auth error, trying keyboard-interactive: {error}");
+            }
+        }
+
+        use client::KeyboardInteractiveAuthResponse as Kbd;
+        let mut response = session
+            .authenticate_keyboard_interactive_start(username, None)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Password / keyboard-interactive authentication failed: {e}")
+            })?;
+
+        for _ in 0..8 {
+            match response {
+                Kbd::Success => return Ok(true),
+                Kbd::Failure => return Ok(false),
+                Kbd::InfoRequest { prompts, .. } => {
+                    let answers = prompts.iter().map(|_| password.to_string()).collect();
+                    response = session
+                        .authenticate_keyboard_interactive_respond(answers)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("keyboard-interactive response failed: {e}")
+                        })?;
+                }
+            }
+        }
+        Ok(false)
+    };
+
+    tokio::time::timeout(SSH_AUTH_TIMEOUT, auth)
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "Authentication timed out after {} seconds",
+                SSH_AUTH_TIMEOUT.as_secs()
+            )
+        })?
+}
+
 #[allow(dead_code)]
 impl SshClient {
     pub fn new() -> Self {
@@ -180,8 +246,8 @@ impl SshClient {
             ..client::Config::default()
         };
 
-        // Connection timeout: 3 seconds
-        let connection_timeout = Duration::from_secs(3);
+        // Wi-Fi / USB-forwarded jailbreak hosts are often slower than LAN Linux boxes.
+        let connection_timeout = Duration::from_secs(12);
 
         let handler = Client {
             host: config.host.clone(),
@@ -193,14 +259,13 @@ impl SshClient {
             connection_timeout,
             client::connect(Arc::new(ssh_config), (&config.host[..], config.port), handler)
         ).await
-            .map_err(|_| anyhow::anyhow!("Connection timed out after 3 seconds. Please check the host address and network connectivity."))?
+            .map_err(|_| anyhow::anyhow!("Connection timed out after 12 seconds. Please check the host address and network connectivity."))?
             .map_err(|e| anyhow::anyhow!("Failed to connect to {}:{}: {}", config.host, config.port, e))?;
 
         let authenticated = match &config.auth_method {
-            AuthMethod::Password { password } => ssh_session
-                .authenticate_password(&config.username, password)
-                .await
-                .map_err(|e| anyhow::anyhow!("Password authentication failed: {}", e))?,
+            AuthMethod::Password { password } => {
+                authenticate_with_password(&mut ssh_session, &config.username, password).await?
+            }
             AuthMethod::PublicKey {
                 key_path: _,
                 passphrase: _,
@@ -227,58 +292,77 @@ impl SshClient {
 
     // Changed to &self instead of &mut self to allow concurrent access
     pub async fn execute_command(&self, command: &str) -> Result<String> {
+        self.execute_command_timeout(command, SSH_EXEC_TIMEOUT).await
+    }
+
+    /// Like [`Self::execute_command`] but with an explicit timeout (used for
+    /// short iOS probes during session open).
+    pub async fn execute_command_timeout(
+        &self,
+        command: &str,
+        timeout: Duration,
+    ) -> Result<String> {
         if let Some(session) = &self.session {
-            let mut channel = session.channel_open_session().await?;
-            channel.exec(true, command).await?;
+            let run = async {
+                let mut channel = session.channel_open_session().await?;
+                channel.exec(true, command).await?;
 
-            let mut output = String::new();
-            let mut code = None;
-            let mut eof_received = false;
-            let mut server_closed = false;
+                let mut output = String::new();
+                let mut code = None;
+                let mut eof_received = false;
+                let mut server_closed = false;
 
-            loop {
-                let msg = channel.wait().await;
-                match msg {
-                    Some(ChannelMsg::Data { ref data }) => {
-                        output.push_str(&String::from_utf8_lossy(data));
-                    }
-                    Some(ChannelMsg::ExitStatus { exit_status }) => {
-                        code = Some(exit_status);
-                        if eof_received {
+                loop {
+                    let msg = channel.wait().await;
+                    match msg {
+                        Some(ChannelMsg::Data { ref data }) => {
+                            output.push_str(&String::from_utf8_lossy(data));
+                        }
+                        Some(ChannelMsg::ExitStatus { exit_status }) => {
+                            code = Some(exit_status);
+                            if eof_received {
+                                break;
+                            }
+                        }
+                        Some(ChannelMsg::Eof) => {
+                            eof_received = true;
+                            if code.is_some() {
+                                break;
+                            }
+                        }
+                        Some(ChannelMsg::Close) => {
+                            server_closed = true;
                             break;
                         }
-                    }
-                    Some(ChannelMsg::Eof) => {
-                        eof_received = true;
-                        if code.is_some() {
+                        None => {
+                            server_closed = true;
                             break;
                         }
+                        _ => {}
                     }
-                    Some(ChannelMsg::Close) => {
-                        server_closed = true;
-                        break;
-                    }
-                    None => {
-                        server_closed = true;
-                        break;
-                    }
-                    _ => {}
                 }
-            }
 
-            // Send SSH_MSG_CHANNEL_CLOSE if the server hasn't already closed the channel.
-            // Without this, russh's session keeps the channel in its internal map until
-            // the session is torn down, causing per-poll memory growth.
-            if !server_closed {
-                let _ = channel.close().await;
-            }
+                // Send SSH_MSG_CHANNEL_CLOSE if the server hasn't already closed the channel.
+                // Without this, russh's session keeps the channel in its internal map until
+                // the session is torn down, causing per-poll memory growth.
+                if !server_closed {
+                    let _ = channel.close().await;
+                }
 
-            // Consider success if we got output and no explicit error code, or code 0
-            match code {
-                Some(0) => Ok(output),
-                None if !output.is_empty() => Ok(output), // No exit code but got output = success
-                _ => Err(anyhow::anyhow!("Command failed with code: {:?}", code)),
-            }
+                // Consider success if we got output and no explicit error code, or code 0
+                match code {
+                    Some(0) => Ok(output),
+                    None if !output.is_empty() => Ok(output), // No exit code but got output = success
+                    _ => Err(anyhow::anyhow!("Command failed with code: {:?}", code)),
+                }
+            };
+
+            tokio::time::timeout(timeout, run).await.map_err(|_| {
+                anyhow::anyhow!(
+                    "Remote command timed out after {} seconds",
+                    timeout.as_secs()
+                )
+            })?
         } else {
             Err(anyhow::anyhow!("Not connected"))
         }

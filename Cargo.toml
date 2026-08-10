@@ -11,7 +11,7 @@ axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
 dirs = "6"
-rmcp = { version = "1.7", features = ["server", "schemars", "transport-streamable-http-server"] }
+rmcp = { version = "1.7", features = ["server", "schemars", "transport-streamable-http-server", "transport-io"] }
 russh = "0.43"
 russh-keys = "0.43"
 russh-sftp = "2"

@@ -67,6 +67,28 @@ class BlockTerminalController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 丢掉已不在 [aliveIds] 里的远程标签(workspace 被外部改写 / 连接已删时防 stale ID)。
+  /// 本机标签保留。若当前活动标签被删,聚焦最近一个仍存活的标签。
+  void pruneMissing(Set<String> aliveIds) {
+    final before = _sessions.length;
+    for (var i = _sessions.length - 1; i >= 0; i--) {
+      final id = _sessions[i].connection?.id;
+      if (id != null && !aliveIds.contains(id)) {
+        _sessions.removeAt(i).dispose();
+        if (_activeIndex > i) {
+          _activeIndex -= 1;
+        }
+      }
+    }
+    if (_sessions.isEmpty) {
+      _sessions.add(BlockSession.local(_repo));
+      _activeIndex = 0;
+    } else if (_activeIndex >= _sessions.length) {
+      _activeIndex = _sessions.length - 1;
+    }
+    if (_sessions.length != before) notifyListeners();
+  }
+
   @override
   void dispose() {
     for (final s in _sessions) {

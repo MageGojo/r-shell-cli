@@ -56,8 +56,18 @@ enum Command {
     /// Print a one-shot snapshot of remote system resource usage.
     Stats(TargetArgs),
 
-    /// Run the local MCP server (Streamable HTTP on 127.0.0.1:9123/mcp).
-    Mcp,
+    /// Run the local MCP server.
+    ///
+    /// Default: Streamable HTTP on `127.0.0.1:9123/mcp`.
+    /// Pass `--stdio` for Cursor (avoids Chromium loopback `net::ERR_FAILED`).
+    Mcp(McpArgs),
+}
+
+#[derive(Args, Debug)]
+struct McpArgs {
+    /// Serve MCP over stdio JSON-RPC (recommended for Cursor mcp.json `command`).
+    #[arg(long)]
+    stdio: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -242,7 +252,7 @@ fn run() -> Result<()> {
         Command::Upload(args) => block_on(cmd_upload(args)),
         Command::Download(args) => block_on(cmd_download(args)),
         Command::Stats(target) => block_on(cmd_stats(target)),
-        Command::Mcp => block_on(cmd_mcp()),
+        Command::Mcp(args) => block_on(cmd_mcp(args)),
     }
 }
 
@@ -372,6 +382,14 @@ const CONNECTION_ID: &str = "cli";
 /// Resolve [`TargetArgs`] into an [`SshConfig`]. Prefers an explicit
 /// `--connection` (saved), otherwise falls back to ad-hoc `--host` flags.
 fn resolve_target(target: &TargetArgs) -> Result<SshConfig> {
+    Ok(resolve_target_with_profile(target)?.0)
+}
+
+/// Like [`resolve_target`], but also returns an iOS exec profile when the
+/// target is a saved connection (tags such as `platform:ios` / `elevate:sudo`).
+fn resolve_target_with_profile(
+    target: &TargetArgs,
+) -> Result<(SshConfig, Option<r_shell_core::ios_ssh::ExecProfile>)> {
     if let Some(reference) = &target.connection {
         let workspace = storage::load_workspace();
         let connection = workspace
@@ -379,7 +397,9 @@ fn resolve_target(target: &TargetArgs) -> Result<SshConfig> {
             .iter()
             .find(|connection| connection.id == *reference || connection.name == *reference)
             .ok_or_else(|| anyhow!("saved connection not found: {reference}"))?;
-        return ssh_config_for_connection(connection, target.insecure);
+        let config = ssh_config_for_connection(connection, target.insecure)?;
+        let profile = r_shell_core::ios_ssh::ExecProfile::from_connection(connection);
+        return Ok((config, Some(profile)));
     }
 
     let host = target
@@ -408,13 +428,16 @@ fn resolve_target(target: &TargetArgs) -> Result<SshConfig> {
         AuthMethod::Password { password }
     };
 
-    Ok(SshConfig {
-        host,
-        port: target.port,
-        username,
-        auth_method,
-        insecure: target.insecure,
-    })
+    Ok((
+        SshConfig {
+            host,
+            port: target.port,
+            username,
+            auth_method,
+            insecure: target.insecure,
+        },
+        None,
+    ))
 }
 
 /// Convert a saved [`SavedConnection`] into a connectable [`SshConfig`],
@@ -463,10 +486,10 @@ where
     F: FnOnce(Arc<NativeConnectionManager>) -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
 {
-    let config = resolve_target(target)?;
+    let (config, profile) = resolve_target_with_profile(target)?;
     let manager = Arc::new(NativeConnectionManager::new());
     manager
-        .create_connection(CONNECTION_ID.to_string(), config)
+        .create_connection_with_profile(CONNECTION_ID.to_string(), config, profile)
         .await
         .context("failed to establish SSH connection")?;
 
@@ -549,11 +572,17 @@ async fn cmd_stats(target: TargetArgs) -> Result<()> {
     .await
 }
 
-async fn cmd_mcp() -> Result<()> {
+async fn cmd_mcp(args: McpArgs) -> Result<()> {
     let bridge = mcp::McpBridge::new();
-    println!("Starting R-Shell MCP server on {}", mcp::MCP_ENDPOINT);
-    println!("Press Ctrl-C to stop.");
-    mcp::start_mcp_server(bridge).await
+    if args.stdio {
+        // stdout is the MCP framing channel — never println! here.
+        eprintln!("Conch MCP server (stdio) ready");
+        mcp::start_mcp_stdio(bridge).await
+    } else {
+        eprintln!("Starting Conch MCP server on {}", mcp::MCP_ENDPOINT);
+        eprintln!("Press Ctrl-C to stop. For Cursor, prefer: r-shell mcp --stdio");
+        mcp::start_mcp_server(bridge).await
+    }
 }
 
 // ---------------------------------------------------------------------------

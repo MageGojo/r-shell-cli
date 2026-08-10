@@ -171,10 +171,33 @@ class SettingsPanel extends StatelessWidget {
 
   // ── MCP ─────────────────────────────────────────────────────
   Widget _mcpSection() {
-    return _section('MCP', Icons.hub_outlined, [
+    return _section('MCP / 开机自启', Icons.hub_outlined, [
       _row(
-        '随应用自动启动',
-        '应用启动时自动开启本机 MCP 服务',
+        '开机自启',
+        '登录系统时启动 Conch,并默认同时打开 MCP',
+        _Switch(
+          value: controller.launchAtLogin,
+          onChanged: (v) => controller.setLaunchAtLogin(v),
+        ),
+      ),
+      if (controller.autostartError != null) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.s4,
+            0,
+            AppSpacing.s4,
+            AppSpacing.s2,
+          ),
+          child: Text(
+            controller.autostartError!,
+            style: const TextStyle(fontSize: 12, color: AppColors.danger),
+          ),
+        ),
+      ],
+      _divider(),
+      _row(
+        '随应用自动启动 MCP',
+        '应用启动时自动开启本机 MCP 服务(Cursor 可连 http://127.0.0.1:9123/mcp)',
         _Switch(
           value: controller.mcpAutoStart,
           onChanged: controller.setMcpAutoStart,

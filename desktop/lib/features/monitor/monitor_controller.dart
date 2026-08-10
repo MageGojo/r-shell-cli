@@ -67,6 +67,9 @@ class MonitorController extends ChangeNotifier {
   /// 当前目标的流工厂（用于重试时重新建流）；null 表示空闲。
   Stream<rust.StatsFrame> Function()? _streamFactory;
 
+  /// 当监控报「SSH connection not found」时回调(AppScaffold 用它重载连接列表)。
+  VoidCallback? onStaleConnection;
+
   /// 绑定(或切换)当前连接。同一连接重复调用不重订阅。
   void setConnection(ConnectionDto? c) {
     if (!_isLocal && c?.id == _connection?.id) return;
@@ -158,6 +161,14 @@ class MonitorController extends ChangeNotifier {
   void _applyError(String message) {
     _error = message;
     _setStatus(MonitorStatus.error);
+    // 连接已从 workspace 消失(GUI 缓存过期 / 外部改写)——停掉无意义的重试并通知上层重载。
+    final lower = message.toLowerCase();
+    if (lower.contains('connection not found') ||
+        lower.contains('ssh connection not found')) {
+      _stop();
+      _streamFactory = null;
+      onStaleConnection?.call();
+    }
   }
 
   void _push(List<double> buf, double value) {

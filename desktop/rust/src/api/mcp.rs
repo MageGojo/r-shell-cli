@@ -7,11 +7,13 @@
 //!
 //! - 启动:若未在运行则 spawn;spawn 后短暂等待,若任务秒退说明绑定失败(端口被占),报错。
 //! - 停止:`JoinHandle::abort()` 释放监听端口(drop 掉 axum serve 的 future)。
-//! - 运行状态 / 运行时长由本模块自管,**不依赖 core 的 `MCP_SERVER_RUNNING`**(abort 不会回写它)。
+//! - 运行状态优先看本模块的 JoinHandle;若 handle 丢失但端口仍在监听(例如面板
+//!   状态与真实 socket 短暂不同步),也显示为运行中,避免「服务其实活着、UI 显示已停止」。
 //!
 //! 工具目录 [`mcp_tools`] 是镜像 core `RShellMcpServer` 上 `#[tool]` 的静态清单(name +
 //! 中文说明 + 分类),供面板展示;不依赖运行时反射。
 
+use std::net::{SocketAddr, TcpStream};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -37,6 +39,12 @@ fn state() -> &'static Mutex<McpState> {
 /// 该 handle 当前是否仍在运行(spawn 的任务未结束)。
 fn is_alive(handle: &Option<JoinHandle<()>>) -> bool {
     handle.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
+}
+
+/// 探测本机 MCP 端口是否在听(不依赖 JoinHandle,用于 UI 与真实 socket 对齐)。
+fn port_listening() -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], mcp::MCP_PORT));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(80)).is_ok()
 }
 
 /// MCP 服务状态快照(面板状态卡用)。
@@ -75,8 +83,11 @@ pub fn mcp_port() -> u16 {
 #[flutter_rust_bridge::frb(sync)]
 pub fn mcp_status() -> McpStatusDto {
     let st = state().lock().expect("mcp state lock");
-    let running = is_alive(&st.handle);
-    let uptime_secs = if running {
+    let handle_alive = is_alive(&st.handle);
+    let listening = port_listening();
+    // JoinHandle 是权威「本进程托管」标记;端口探测兜底避免 UI 假死/假停。
+    let running = handle_alive || listening;
+    let uptime_secs = if handle_alive {
         st.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0)
     } else {
         0
@@ -96,10 +107,18 @@ pub fn mcp_status() -> McpStatusDto {
 /// spawn 后等待 250ms;若任务已结束说明 `start_mcp_server` 绑定失败(多为端口被占),返回错误。
 pub async fn mcp_start() -> Result<(), String> {
     {
-        let st = state().lock().map_err(|_| "mcp state lock poisoned".to_string())?;
+        let st = state()
+            .lock()
+            .map_err(|_| "mcp state lock poisoned".to_string())?;
         if is_alive(&st.handle) {
             return Ok(());
         }
+    }
+
+    // 端口已被占用:视为 MCP 已在跑(幂等成功)。无法在无额外依赖下区分
+    // 「真 MCP」与「占坑进程」;用户点停止时若仍占端口会收到明确提示。
+    if port_listening() {
+        return Ok(());
     }
 
     let bridge = mcp::McpBridge::new();
@@ -118,7 +137,9 @@ pub async fn mcp_start() -> Result<(), String> {
         ));
     }
 
-    let mut st = state().lock().map_err(|_| "mcp state lock poisoned".to_string())?;
+    let mut st = state()
+        .lock()
+        .map_err(|_| "mcp state lock poisoned".to_string())?;
     st.handle = Some(handle);
     st.started_at = Some(Instant::now());
     Ok(())
@@ -127,12 +148,22 @@ pub async fn mcp_start() -> Result<(), String> {
 /// 停止本机 MCP 服务(幂等:未运行则无操作)。abort spawn 的任务以释放监听端口。
 pub async fn mcp_stop() -> Result<(), String> {
     let handle = {
-        let mut st = state().lock().map_err(|_| "mcp state lock poisoned".to_string())?;
+        let mut st = state()
+            .lock()
+            .map_err(|_| "mcp state lock poisoned".to_string())?;
         st.started_at = None;
         st.handle.take()
     };
     if let Some(handle) = handle {
         handle.abort();
+        // abort 后给 OS 一点时间释放 listen socket。
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    if port_listening() {
+        return Err(format!(
+            "已停止本应用托管的 MCP,但端口 {} 仍在监听(可能由 CLI `r-shell mcp` 或其他进程占用)。请手动结束该进程。",
+            mcp::MCP_PORT
+        ));
     }
     Ok(())
 }
@@ -148,17 +179,37 @@ pub fn mcp_tools() -> Vec<McpToolDto> {
         }
     }
     vec![
-        tool("ssh_session_open", "打开 / 复用持久 SSH 会话", "session"),
+        tool(
+            "ssh_session_open",
+            "打开/复用持久会话(ios PATH · elevate=su|sudo)",
+            "session",
+        ),
         tool("ssh_exec", "在已开会话上执行命令", "exec"),
         tool("ssh_read_file", "读取远程文件", "file"),
         tool("ssh_write_file", "写入 / 覆盖远程文件", "file"),
         tool("ssh_list_dir", "列出远程目录", "dir"),
         tool("ssh_sessions_list", "列出当前活跃会话", "session"),
         tool("ssh_session_close", "关闭持久 SSH 会话", "session"),
-        tool("r_shell_ssh_connections_list", "列出已保存连接(脱敏)", "connection"),
-        tool("r_shell_ssh_connection_create", "创建并保存 SSH 连接", "connection"),
-        tool("r_shell_ssh_connection_update", "更新已保存连接", "connection"),
-        tool("r_shell_ssh_connection_delete", "删除已保存连接", "connection"),
+        tool(
+            "r_shell_ssh_connections_list",
+            "列出已保存连接(脱敏)",
+            "connection",
+        ),
+        tool(
+            "r_shell_ssh_connection_create",
+            "创建连接(platform=ios/android/adb · elevate)",
+            "connection",
+        ),
+        tool(
+            "r_shell_ssh_connection_update",
+            "更新已保存连接",
+            "connection",
+        ),
+        tool(
+            "r_shell_ssh_connection_delete",
+            "删除已保存连接",
+            "connection",
+        ),
         tool("r_shell_ssh_tabs_list", "列出已打开的终端标签", "session"),
     ]
 }

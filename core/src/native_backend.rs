@@ -173,6 +173,9 @@ pub struct NativeConnectionManager {
     /// Detected stats platform per connection (Unix vs Windows), cached after the
     /// first successful snapshot so we don't re-probe both commands every sample.
     stats_platform: RwLock<HashMap<String, crate::monitor::StatsPlatform>>,
+    /// Per-connection remote-exec policy (iOS PATH / su·sudo elevate). Applied
+    /// inside [`Self::execute_command`] before the backend sees the command.
+    exec_profiles: RwLock<HashMap<String, crate::ios_ssh::ExecProfile>>,
 }
 
 impl Default for NativeConnectionManager {
@@ -189,14 +192,80 @@ impl NativeConnectionManager {
             ptys: RwLock::new(HashMap::new()),
             next_pty_seq: AtomicU64::new(1),
             stats_platform: RwLock::new(HashMap::new()),
+            exec_profiles: RwLock::new(HashMap::new()),
         }
     }
 
     pub async fn create_connection(&self, connection_id: String, config: SshConfig) -> Result<()> {
+        self.create_connection_with_profile(connection_id, config, None)
+            .await
+    }
+
+    /// Open an SSH session and optionally attach an [`ExecProfile`](crate::ios_ssh::ExecProfile)
+    /// (iOS jailbreak PATH / privilege escalation) used by later `execute_command` calls.
+    ///
+    /// After a successful login the remote is probed once (`uname` + `/var/jb`);
+    /// jailbroken iOS / Darwin hosts automatically get PATH wrapping so you can
+    /// just type `host + root + password` without flipping a special toggle.
+    pub async fn create_connection_with_profile(
+        &self,
+        connection_id: String,
+        config: SshConfig,
+        profile: Option<crate::ios_ssh::ExecProfile>,
+    ) -> Result<()> {
         let mut client = SshClient::new();
         client.connect(&config).await?;
+
+        let mut profile = profile.unwrap_or_default();
+        // Best-effort platform sniff — never fails the connect.
+        // Keep this short: a hung probe used to block ssh_session_open forever
+        // (and hold Backend locks that deadlocked reconnect).
+        if let Ok(Ok(probe)) = tokio::time::timeout(
+            Duration::from_secs(8),
+            client.execute_command_timeout(
+                "uname -s 2>/dev/null; test -d /var/jb && echo __HAS_JB__",
+                Duration::from_secs(8),
+            ),
+        )
+        .await
+        {
+            let probe = probe.to_ascii_lowercase();
+            if probe.contains("darwin") || probe.contains("__has_jb__") {
+                profile.ios = true;
+            }
+        }
+        // Do not auto-enable su/sudo for mobile@iOS: the SSH login password is
+        // often different from the root password (as on many jailbreaks), and a
+        // blind elevate wraps every exec into a failing `su`. Callers opt in via
+        // `elevate:su` / `elevate:sudo` tags (or MCP `elevate=`).
+
+        if profile.needs_wrap() {
+            self.exec_profiles
+                .write()
+                .await
+                .insert(connection_id.clone(), profile);
+        } else {
+            self.exec_profiles.write().await.remove(&connection_id);
+        }
         self.insert_backend(connection_id, Backend::Ssh(client)).await;
         Ok(())
+    }
+
+    /// Replace (or clear) the exec profile for an already-open connection.
+    pub async fn set_exec_profile(
+        &self,
+        connection_id: &str,
+        profile: Option<crate::ios_ssh::ExecProfile>,
+    ) {
+        let mut profiles = self.exec_profiles.write().await;
+        match profile {
+            Some(p) => {
+                profiles.insert(connection_id.to_string(), p);
+            }
+            None => {
+                profiles.remove(connection_id);
+            }
+        }
     }
 
     /// Open an ADB connection to an Android device (`serial = host:port`) and
@@ -211,12 +280,29 @@ impl NativeConnectionManager {
 
     /// Insert a freshly-opened backend, tearing down any previous one registered
     /// under the same id first.
+    ///
+    /// Critical for iOS MCP reconnect: never await a Backend write-lock while
+    /// still holding the connections map lock, and never wait forever on a
+    /// hung prior exec that still holds the read lock.
     async fn insert_backend(&self, connection_id: String, backend: Backend) {
-        let mut connections = self.connections.write().await;
-        if let Some(existing) = connections.remove(&connection_id) {
-            let mut existing = existing.write().await;
-            let _ = existing.disconnect().await;
+        let old = {
+            let mut connections = self.connections.write().await;
+            connections.remove(&connection_id)
+        };
+        if let Some(existing) = old {
+            // Best-effort disconnect; abandon if a stuck reader holds the lock.
+            match tokio::time::timeout(Duration::from_secs(2), existing.write()).await {
+                Ok(mut guard) => {
+                    let _ = tokio::time::timeout(Duration::from_secs(3), guard.disconnect()).await;
+                }
+                Err(_) => {
+                    eprintln!(
+                        "[ssh] abandoning prior session '{connection_id}' (disconnect lock busy)"
+                    );
+                }
+            }
         }
+        let mut connections = self.connections.write().await;
         connections.insert(connection_id, Arc::new(RwLock::new(backend)));
     }
 
@@ -229,45 +315,81 @@ impl NativeConnectionManager {
             .retain(|_, handle| handle.connection_id != connection_id);
         // Forget the detected stats platform; a reconnect may target a different host.
         self.stats_platform.write().await.remove(connection_id);
+        self.exec_profiles.write().await.remove(connection_id);
 
-        let mut connections = self.connections.write().await;
-        if let Some(client) = connections.remove(connection_id) {
-            let mut client = client.write().await;
-            client.disconnect().await?;
+        let old = {
+            let mut connections = self.connections.write().await;
+            connections.remove(connection_id)
+        };
+        if let Some(client) = old {
+            match tokio::time::timeout(Duration::from_secs(2), client.write()).await {
+                Ok(mut guard) => {
+                    let _ = tokio::time::timeout(Duration::from_secs(3), guard.disconnect()).await;
+                }
+                Err(_) => {
+                    eprintln!(
+                        "[ssh] close_connection: abandoning '{connection_id}' (lock busy)"
+                    );
+                }
+            }
         }
         Ok(())
     }
 
     pub async fn execute_command(&self, connection_id: &str, command: &str) -> Result<String> {
-        let connections = self.connections.read().await;
-        let client = connections
-            .get(connection_id)
-            .ok_or_else(|| anyhow::anyhow!("Connection not found"))?;
+        let wrapped = {
+            let profiles = self.exec_profiles.read().await;
+            match profiles.get(connection_id) {
+                Some(profile) if profile.needs_wrap() => {
+                    crate::ios_ssh::wrap_command(command, profile)
+                }
+                _ => command.to_string(),
+            }
+        };
+        self.execute_command_raw(connection_id, &wrapped).await
+    }
 
-        let client = client.read().await;
+    /// Run a remote command **without** applying the session's iOS/elevate
+    /// [`ExecProfile`](crate::ios_ssh::ExecProfile). Used by stats collectors
+    /// (their scripts are self-contained and elevate quoting would break them).
+    pub async fn execute_command_raw(
+        &self,
+        connection_id: &str,
+        command: &str,
+    ) -> Result<String> {
+        // Clone the Arc so we don't hold the connections-map lock across exec.
+        let backend = {
+            let connections = self.connections.read().await;
+            connections
+                .get(connection_id)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("Connection not found"))?
+        };
+        let client = backend.read().await;
         client.execute_command(command).await
     }
 
     /// Snapshot remote resource usage (CPU, memory, disk, network) in one call.
     /// Returns the raw combined output for [`crate::monitor::parse_snapshot`].
     pub async fn fetch_system_stats(&self, connection_id: &str) -> Result<String> {
-        self.execute_command(connection_id, &crate::monitor::stats_command())
+        self.execute_command_raw(connection_id, &crate::monitor::stats_command())
             .await
     }
 
     /// OS-aware system snapshot: collects metrics with the right command for the
-    /// remote platform (Linux `/proc`+`df`, or Windows PowerShell CIM) and parses
-    /// it into a [`StatsSnapshot`](crate::monitor::StatsSnapshot).
+    /// remote platform (Linux `/proc`+`df`, Darwin `sysctl`/`vm_stat`, or Windows
+    /// PowerShell CIM) and parses it into a [`StatsSnapshot`](crate::monitor::StatsSnapshot).
     ///
-    /// The platform is detected on the first call (try Linux, then Windows) and
-    /// cached per connection, so steady-state sampling is a single round-trip.
+    /// The platform is detected on the first call and cached per connection, so
+    /// steady-state sampling is a single round-trip. Collectors run via
+    /// [`Self::execute_command_raw`] so iOS `elevate:` tags don't wrap them.
     pub async fn fetch_system_snapshot(
         &self,
         connection_id: &str,
     ) -> Result<crate::monitor::StatsSnapshot> {
         use crate::monitor::{
-            parse_snapshot, parse_windows_snapshot, stats_command, windows_stats_command,
-            StatsPlatform,
+            darwin_stats_command, parse_darwin_snapshot, parse_snapshot,
+            parse_windows_snapshot, stats_command, windows_stats_command, StatsPlatform,
         };
 
         // Fast path: platform already known for this connection.
@@ -275,24 +397,37 @@ impl NativeConnectionManager {
         if let Some(platform) = cached {
             return match platform {
                 StatsPlatform::Unix => {
-                    let raw = self.execute_command(connection_id, &stats_command()).await?;
+                    let raw = self
+                        .execute_command_raw(connection_id, &stats_command())
+                        .await?;
                     Ok(parse_snapshot(&raw))
+                }
+                StatsPlatform::Darwin => {
+                    let raw = self
+                        .execute_command_raw(connection_id, &darwin_stats_command())
+                        .await?;
+                    Ok(parse_darwin_snapshot(&raw))
                 }
                 StatsPlatform::Windows => {
                     let raw = self
-                        .execute_command(connection_id, &windows_stats_command())
+                        .execute_command_raw(connection_id, &windows_stats_command())
                         .await?;
                     Ok(parse_windows_snapshot(&raw))
                 }
             };
         }
 
-        // Detect: try the Linux collector first. A real Linux host returns usable
-        // data; a Windows host fails (non-zero exit) or yields only empty sections.
-        let unix_result = self.execute_command(connection_id, &stats_command()).await;
+        // Detect: Linux → Darwin (jailbroken iOS / macOS) → Windows.
+        // Darwin also has `df`, so a Unix snapshot is only trusted when /proc
+        // yielded CPU jiffies or MemTotal — otherwise we'd mis-label iPhones
+        // as Linux (mem=0, bogus disk headline) and never run the Darwin path.
+        let unix_result = self
+            .execute_command_raw(connection_id, &stats_command())
+            .await;
         if let Ok(raw) = &unix_result {
             let snap = parse_snapshot(raw);
-            if !snap.is_empty() {
+            let looks_like_linux = snap.cpu.is_some() || snap.mem_total_kb > 0;
+            if !snap.is_empty() && looks_like_linux {
                 self.stats_platform
                     .write()
                     .await
@@ -301,9 +436,22 @@ impl NativeConnectionManager {
             }
         }
 
-        // Fall back to the Windows PowerShell collector.
+        let darwin_result = self
+            .execute_command_raw(connection_id, &darwin_stats_command())
+            .await;
+        if let Ok(raw) = &darwin_result {
+            let snap = parse_darwin_snapshot(raw);
+            if !snap.is_empty() {
+                self.stats_platform
+                    .write()
+                    .await
+                    .insert(connection_id.to_string(), StatsPlatform::Darwin);
+                return Ok(snap);
+            }
+        }
+
         match self
-            .execute_command(connection_id, &windows_stats_command())
+            .execute_command_raw(connection_id, &windows_stats_command())
             .await
         {
             Ok(raw) => {
@@ -315,15 +463,23 @@ impl NativeConnectionManager {
                         .insert(connection_id.to_string(), StatsPlatform::Windows);
                     return Ok(snap);
                 }
-                // Neither collector produced data; surface the original Linux error
-                // if there was one, else a generic message.
                 unix_result.and_then(|_| {
+                    darwin_result.and_then(|_| {
+                        Err(anyhow::anyhow!(
+                            "could not collect system stats (unsupported remote OS?)"
+                        ))
+                    })
+                })
+            }
+            Err(win_err) => {
+                if unix_result.is_ok() || darwin_result.is_ok() {
                     Err(anyhow::anyhow!(
                         "could not collect system stats (unsupported remote OS?)"
                     ))
-                })
+                } else {
+                    unix_result.and(darwin_result).and(Err(win_err))
+                }
             }
-            Err(win_err) => unix_result.and(Err(win_err)),
         }
     }
 

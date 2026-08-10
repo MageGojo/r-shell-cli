@@ -2,8 +2,8 @@ use axum::{
     Router,
     body::Body,
     http::{
-        Request, StatusCode,
-        header::{HOST, ORIGIN},
+        HeaderName, HeaderValue, Method, Request, StatusCode,
+        header::{ACCEPT, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, HOST, ORIGIN},
     },
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -84,42 +84,15 @@ impl McpBridge {
     }
 
     fn create_connection(&self, params: CreateSshConnectionParams) -> StdResult<Value, String> {
-        let name = params.name.trim().to_string();
-        let host = params.host.trim().to_string();
-        let username = params.username.trim().to_string();
-        if name.is_empty() || host.is_empty() || username.is_empty() || params.port == 0 {
-            return Err("name, host, username, and a valid port are required".to_string());
-        }
-
-        let folder = params.folder.trim();
-        let connection = SavedConnection {
-            id: SavedConnection::new_id(),
-            name,
-            host,
-            port: params.port,
-            username,
-            protocol: "SSH".to_string(),
-            folder: if folder.is_empty() {
-                "All Connections".to_string()
-            } else {
-                folder.to_string()
-            },
-            tags: params.tags,
-            description: params.description.unwrap_or_default(),
-            auth_method: Self::auth_method_label(&params.auth_method).to_string(),
-            password: params.password.filter(|value| !value.is_empty()),
-            private_key_path: params.private_key_path.filter(|value| !value.is_empty()),
-            passphrase: params.passphrase.filter(|value| !value.is_empty()),
-            status: crate::model::ConnectionStatus::Disconnected,
-        };
+        let built = build_connection_from_mcp(params)?;
 
         let _guard = self.lock.lock().map_err(|_| "bridge lock poisoned")?;
         let mut workspace = storage::load_workspace();
-        workspace.connections.push(connection.clone());
-        workspace.active_connection_id = Some(connection.id.clone());
+        workspace.connections.push(built.clone());
+        workspace.active_connection_id = Some(built.id.clone());
         storage::save_workspace(&workspace).map_err(|error| error.to_string())?;
 
-        Ok(json!({ "connection": connection.sanitized() }))
+        Ok(json!({ "connection": built.sanitized() }))
     }
 
     fn update_connection(&self, params: UpdateSshConnectionParams) -> StdResult<Value, String> {
@@ -262,7 +235,7 @@ impl McpBridge {
     fn resolve_open_config(
         &self,
         params: &OpenSessionParams,
-    ) -> StdResult<(String, SshConfig), String> {
+    ) -> StdResult<(String, SshConfig, crate::ios_ssh::ExecProfile), String> {
         if let Some(reference) = params
             .connection
             .as_ref()
@@ -313,6 +286,17 @@ impl McpBridge {
                 }
             };
 
+            let mut profile = crate::ios_ssh::ExecProfile::from_connection(connection);
+            apply_session_profile_overrides(&mut profile, params);
+            // Prefer an explicit password override for elevate as well.
+            if let Some(pass) = params
+                .password
+                .clone()
+                .filter(|value| !value.is_empty())
+            {
+                profile.elevate_password = Some(pass);
+            }
+
             let session_id = connection.id.clone();
             return Ok((
                 session_id,
@@ -323,6 +307,7 @@ impl McpBridge {
                     auth_method,
                     insecure: params.insecure,
                 },
+                profile,
             ));
         }
 
@@ -371,6 +356,12 @@ impl McpBridge {
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| format!("{username}@{host}:{port}"));
 
+        let mut profile = crate::ios_ssh::ExecProfile::default();
+        apply_session_profile_overrides(&mut profile, params);
+        if profile.elevate_password.is_none() {
+            profile.elevate_password = params.password.clone().filter(|v| !v.is_empty());
+        }
+
         Ok((
             session_id,
             SshConfig {
@@ -380,21 +371,29 @@ impl McpBridge {
                 auth_method,
                 insecure: params.insecure,
             },
+            profile,
         ))
     }
 
     async fn open_session(&self, params: OpenSessionParams) -> StdResult<Value, String> {
-        let (session_id, config) = self.resolve_open_config(&params)?;
+        let (session_id, config, profile) = self.resolve_open_config(&params)?;
         let host = config.host.clone();
         let port = config.port;
         let username = config.username.clone();
+        let ios = profile.ios;
+        let elevate = profile.elevate.as_str();
 
         let reused = self.manager.has_connection(&session_id).await && !params.reconnect;
         if !reused {
             self.manager
-                .create_connection(session_id.clone(), config)
+                .create_connection_with_profile(session_id.clone(), config, Some(profile))
                 .await
                 .map_err(|error| format!("failed to open SSH session: {error:#}"))?;
+        } else if profile.needs_wrap() || params.platform.is_some() || params.elevate.is_some() {
+            // Allow updating the exec profile on a reused session (e.g. flip elevate).
+            self.manager
+                .set_exec_profile(&session_id, Some(profile))
+                .await;
         }
 
         Ok(json!({
@@ -403,6 +402,8 @@ impl McpBridge {
             "port": port,
             "username": username,
             "reused": reused,
+            "ios": ios,
+            "elevate": elevate,
             "open_sessions": self.manager.list_connection_ids().await,
         }))
     }
@@ -553,12 +554,18 @@ fn default_folder() -> String {
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct CreateSshConnectionParams {
+    /// Display name. Optional when `platform` is set (defaults to host or "iPhone").
+    #[serde(default)]
     pub name: String,
     pub host: String,
+    /// Optional when `platform=ios` (defaults to `root`) or `platform=android` (`root`).
+    #[serde(default)]
     pub username: String,
     #[serde(default = "default_ssh_port")]
     pub port: u16,
-    pub auth_method: SshAuthMethod,
+    /// Defaults to `password`. Prefer `publickey` for Android dropbear key auth.
+    #[serde(default)]
+    pub auth_method: Option<SshAuthMethod>,
     #[serde(default)]
     pub password: Option<String>,
     #[serde(default)]
@@ -571,6 +578,173 @@ pub struct CreateSshConnectionParams {
     pub tags: Vec<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// Device preset: `ios`/`iphone` (jailbreak OpenSSH), `android` (dropbear/OpenSSH),
+    /// or `adb` (Android Debug Bridge — sets protocol=ADB).
+    #[serde(default)]
+    pub platform: Option<String>,
+    /// Privilege escalation tag for iOS mobile→root: `su` | `sudo` | `none`.
+    #[serde(default)]
+    pub elevate: Option<String>,
+    /// `SSH` (default) or `ADB`. Overrides `platform=adb`.
+    #[serde(default)]
+    pub protocol: Option<String>,
+}
+
+/// Apply iOS / Android OpenSSH (or ADB) presets and build a [`SavedConnection`].
+fn build_connection_from_mcp(params: CreateSshConnectionParams) -> StdResult<SavedConnection, String> {
+    let host = params.host.trim().to_string();
+    if host.is_empty() {
+        return Err("host is required".to_string());
+    }
+
+    let platform = params
+        .platform
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let is_ios = matches!(platform.as_str(), "ios" | "iphone" | "ipad" | "jailbreak");
+    let is_android_ssh = platform == "android";
+    let is_adb = platform == "adb"
+        || params
+            .protocol
+            .as_deref()
+            .unwrap_or("")
+            .eq_ignore_ascii_case("ADB");
+
+    let mut name = params.name.trim().to_string();
+    let mut username = params.username.trim().to_string();
+    let mut port = params.port;
+    let mut folder = params.folder.trim().to_string();
+    let mut tags = params.tags;
+    let mut password = params.password.filter(|v| !v.is_empty());
+    let private_key_path = params.private_key_path.filter(|v| !v.is_empty());
+    let passphrase = params.passphrase.filter(|v| !v.is_empty());
+    let mut description = params.description.unwrap_or_default();
+
+    let protocol = if is_adb {
+        "ADB".to_string()
+    } else {
+        "SSH".to_string()
+    };
+
+    if is_ios {
+        push_tag_unique(&mut tags, "platform:ios");
+        if username.is_empty() {
+            username = "root".into();
+        }
+        if name.is_empty() {
+            name = "iPhone".into();
+        }
+        if port == 0 {
+            port = 22;
+        }
+        if folder.is_empty() || folder == "All Connections" {
+            folder = "iOS".into();
+        }
+        if password.is_none() && private_key_path.is_none() {
+            password = Some("alpine".into());
+        }
+        if description.is_empty() {
+            description = "iOS jailbreak OpenSSH".into();
+        }
+    } else if is_android_ssh {
+        push_tag_unique(&mut tags, "platform:android");
+        if username.is_empty() {
+            username = "root".into();
+        }
+        if name.is_empty() {
+            name = format!("Android {host}");
+        }
+        // Common dropbear-over-LAN port when caller left the SSH default.
+        if port == 22 && private_key_path.is_some() {
+            // keep 22 — many devices use 22; don't force 8022
+        }
+        if folder.is_empty() || folder == "All Connections" {
+            folder = "Android".into();
+        }
+        if description.is_empty() {
+            description = "Android OpenSSH / dropbear".into();
+        }
+    } else if is_adb {
+        if username.is_empty() {
+            username = "shell".into();
+        }
+        if name.is_empty() {
+            name = format!("ADB {host}");
+        }
+        if port == 0 || port == 22 {
+            port = 5555;
+        }
+        if folder.is_empty() || folder == "All Connections" {
+            folder = "Android".into();
+        }
+    }
+
+    if let Some(elevate) = params.elevate.as_deref() {
+        let e = elevate.trim().to_ascii_lowercase();
+        tags.retain(|t| {
+            let l = t.trim().to_ascii_lowercase();
+            l != "elevate" && !l.starts_with("elevate:")
+        });
+        match e.as_str() {
+            "su" | "sudo" => push_tag_unique(&mut tags, &format!("elevate:{e}")),
+            "none" | "" => {}
+            other => {
+                return Err(format!(
+                    "elevate must be none|su|sudo, got '{other}'"
+                ));
+            }
+        }
+    }
+
+    if name.is_empty() {
+        name = host.clone();
+    }
+    if username.is_empty() && !is_adb {
+        return Err("username is required (or set platform=ios|android for defaults)".into());
+    }
+    if port == 0 {
+        return Err("port must be greater than 0".into());
+    }
+
+    let auth_method = match params.auth_method {
+        Some(SshAuthMethod::PublicKey) => "publickey".into(),
+        Some(SshAuthMethod::Password) => "password".into(),
+        None if private_key_path.is_some() => "publickey".into(),
+        None => "password".into(),
+    };
+
+    Ok(SavedConnection {
+        id: SavedConnection::new_id(),
+        name,
+        host,
+        port,
+        username,
+        protocol,
+        folder: if folder.is_empty() {
+            "All Connections".into()
+        } else {
+            folder
+        },
+        tags,
+        description,
+        auth_method,
+        password,
+        private_key_path,
+        passphrase,
+        status: crate::model::ConnectionStatus::Disconnected,
+    })
+}
+
+fn push_tag_unique(tags: &mut Vec<String>, tag: &str) {
+    let lower = tag.to_ascii_lowercase();
+    if !tags
+        .iter()
+        .any(|t| t.trim().eq_ignore_ascii_case(lower.as_str()))
+    {
+        tags.push(tag.to_string());
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -642,6 +816,32 @@ pub struct OpenSessionParams {
     /// Force a fresh connection even if a session with this id is already open.
     #[serde(default)]
     pub reconnect: bool,
+    /// `ios` enables jailbreak PATH wrapping for this session.
+    #[serde(default)]
+    pub platform: Option<String>,
+    /// Privilege escalation: `none` | `su` | `sudo` (for mobile→root on iOS).
+    #[serde(default)]
+    pub elevate: Option<String>,
+}
+
+fn apply_session_profile_overrides(
+    profile: &mut crate::ios_ssh::ExecProfile,
+    params: &OpenSessionParams,
+) {
+    if let Some(platform) = params.platform.as_deref() {
+        let p = platform.trim().to_ascii_lowercase();
+        if p == "ios" || p == "iphone" || p == "ipad" {
+            profile.ios = true;
+        } else if p == "linux" || p == "windows" || p == "auto" || p == "none" {
+            // Explicit non-iOS clears the flag (overrides connection tags).
+            if p != "auto" {
+                profile.ios = false;
+            }
+        }
+    }
+    if let Some(elevate) = params.elevate.as_deref() {
+        profile.elevate = crate::ios_ssh::ElevateMethod::parse(elevate);
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -728,7 +928,13 @@ impl RShellMcpServer {
             .await
     }
 
-    #[tool(description = "Create a persistent SSH connection, connect it, and open a terminal tab")]
+    #[tool(
+        description = "Create a saved SSH/ADB connection in Conch (shared workspace.json; GUI refreshes live). \
+                       Prefer this over editing files. Device presets: platform=ios|iphone (jailbreak OpenSSH → \
+                       tags platform:ios, defaults root/alpine/22, folder iOS); platform=android (dropbear/OpenSSH, \
+                       folder Android); platform=adb (protocol ADB, port 5555). Optional elevate=su|sudo for \
+                       iOS mobile→root. Only host is strictly required when a platform preset is set."
+    )]
     async fn r_shell_ssh_connection_create(
         &self,
         Parameters(params): Parameters<CreateSshConnectionParams>,
@@ -776,8 +982,10 @@ impl RShellMcpServer {
 
     #[tool(
         description = "Open (or reuse) a persistent SSH session that stays connected across calls. \
-                       Returns a session_id to use with ssh_exec / ssh_read_file / ssh_write_file / \
-                       ssh_list_dir. Use a saved `connection` (id|name) or ad-hoc `host`/`username`."
+                       Returns a session_id for ssh_exec / ssh_read_file / ssh_write_file / ssh_list_dir. \
+                       Use saved `connection` (id|name) or ad-hoc host/username. For jailbreak iOS set \
+                       platform=ios (PATH inject) and elevate=su|sudo when logged in as mobile. Android \
+                       OpenSSH/dropbear is plain SSH — prefer a saved connection with platform=android."
     )]
     async fn ssh_session_open(
         &self,
@@ -864,13 +1072,19 @@ pub async fn start_mcp_server(bridge: Arc<McpBridge>) -> anyhow::Result<()> {
             .with_cancellation_token(cancellation_token.child_token()),
     );
 
+    // Layer order (request path):
+    //   validate_local_origin → cursor_cors_pna → normalize_mcp_accept → service
+    // Origin/Host guard outermost; CORS/PNA next so Cursor's Chromium preflight
+    // gets Private-Network headers; Accept rewrite innermost before rmcp.
     let router = Router::new()
         .nest_service(MCP_ENDPOINT_PATH, service)
+        .layer(middleware::from_fn(normalize_mcp_accept))
+        .layer(middleware::from_fn(cursor_cors_pna))
         .layer(middleware::from_fn(validate_local_origin));
 
     let listener = tokio::net::TcpListener::bind(&bind_address).await?;
     MCP_SERVER_RUNNING.store(true, Ordering::SeqCst);
-    eprintln!("R-Shell MCP server listening on {MCP_ENDPOINT}");
+    eprintln!("Conch MCP server listening on {MCP_ENDPOINT}");
 
     if let Err(error) = axum::serve(listener, router).await {
         MCP_SERVER_RUNNING.store(false, Ordering::SeqCst);
@@ -881,9 +1095,114 @@ pub async fn start_mcp_server(bridge: Arc<McpBridge>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Serve the same tool surface over **stdio** JSON-RPC.
+///
+/// Cursor's Shared MCP process uses Chromium networking for `url:` Streamable
+/// HTTP endpoints. On macOS that frequently fails with `net::ERR_FAILED` when
+/// talking to loopback (Local Network / Private Network Access), even though
+/// `curl` works. Spawning this process as a stdio MCP server sidesteps Chromium
+/// entirely — Cursor talks to a child process over pipes.
+///
+/// Important: do not write anything to stdout except MCP framing (log to stderr).
+pub async fn start_mcp_stdio(bridge: Arc<McpBridge>) -> anyhow::Result<()> {
+    use rmcp::{ServiceExt, transport::stdio};
+
+    let server = RShellMcpServer::new(bridge);
+    let running = server.serve(stdio()).await?;
+    let _reason = running.waiting().await?;
+    Ok(())
+}
+
 #[allow(dead_code)]
 pub fn server_running() -> bool {
     MCP_SERVER_RUNNING.load(Ordering::SeqCst)
+}
+
+/// rmcp Streamable-HTTP rejects POST unless `Accept` contains BOTH
+/// `application/json` and `text/event-stream`. Cursor (and some other MCP
+/// clients) only send one of them — or omit Accept entirely — which surfaces
+/// as tool discovery failure (`406 Not Acceptable`). Rewrite incomplete
+/// Accept headers so those clients can connect, while still letting complete
+/// headers through unchanged.
+fn accept_needs_rewrite(accept: &str) -> bool {
+    let has_json = accept.contains("application/json");
+    let has_sse = accept.contains("text/event-stream");
+    !(has_json && has_sse)
+}
+
+async fn normalize_mcp_accept(mut request: Request<Body>, next: Next) -> Response {
+    const REQUIRED: &str = "application/json, text/event-stream";
+    let accept = request
+        .headers()
+        .get(ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if accept_needs_rewrite(accept) {
+        if let Ok(value) = HeaderValue::from_str(REQUIRED) {
+            request.headers_mut().insert(ACCEPT, value);
+        }
+    }
+    next.run(request).await
+}
+
+/// Cursor's Shared MCP process uses Chromium networking. Requests to loopback
+/// from a desktop `vscode-file://` / `cursor://` Origin trigger Chrome's
+/// **Private Network Access** preflight (`OPTIONS` +
+/// `Access-Control-Request-Private-Network: true`). Without a matching
+/// `Access-Control-Allow-Private-Network: true` response, Chromium aborts with
+/// `net::ERR_FAILED` before any POST/`initialize` reaches axum — which is
+/// exactly what Cursor logs as "MCP HTTP exchange failed".
+///
+/// This middleware:
+/// 1. Answers CORS/PNA preflights with 204 + the required allow headers.
+/// 2. Stamps the same CORS/PNA headers on normal responses so follow-up
+///    POSTs/GETs also succeed under Chromium.
+async fn cursor_cors_pna(request: Request<Body>, next: Next) -> Response {
+    let origin = request
+        .headers()
+        .get(ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+
+    if request.method() == Method::OPTIONS {
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        apply_cors_pna_headers(response.headers_mut(), origin.as_deref());
+        return response;
+    }
+
+    let mut response = next.run(request).await;
+    apply_cors_pna_headers(response.headers_mut(), origin.as_deref());
+    response
+}
+
+fn apply_cors_pna_headers(headers: &mut axum::http::HeaderMap, origin: Option<&str>) {
+    // Reflect an already-validated Origin (guard sits outside this layer). When
+    // Origin is absent (CLI / curl), skip ACAO — those clients do not need CORS.
+    if let Some(origin) = origin {
+        if let Ok(value) = HeaderValue::from_str(origin) {
+            headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, value);
+        }
+    }
+
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, DELETE, OPTIONS"),
+    );
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static(
+            "content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id",
+        ),
+    );
+    // Chrome Private Network Access (PNA) / Local Network Access.
+    headers.insert(
+        HeaderName::from_static("access-control-allow-private-network"),
+        HeaderValue::from_static("true"),
+    );
+    headers.insert(
+        HeaderName::from_static("access-control-allow-local-network"),
+        HeaderValue::from_static("true"),
+    );
 }
 
 /// Guard the MCP endpoint against cross-origin and DNS-rebinding access.
@@ -945,10 +1264,32 @@ fn is_loopback_host_header(host: &str) -> bool {
     is_loopback_host(host)
 }
 
-/// Validate an `Origin` header value: must be an http(s) loopback origin.
-/// The literal `null` and any non-loopback host are rejected.
+/// Validate an `Origin` header value.
+///
+/// Allowed:
+/// - http(s) loopback origins (`http://127.0.0.1`, `http://localhost`, …)
+/// - desktop IDE schemes used by Cursor / VS Code Streamable-HTTP clients
+///   (`vscode-file://`, `vscode-webview://`, `cursor://`)
+///
+/// The literal `null` and any non-loopback http(s) host are rejected. Combined
+/// with the loopback `Host` check this still blocks DNS-rebinding from the web.
 fn is_allowed_local_origin(origin: &str) -> bool {
-    let Ok(uri) = origin.parse::<axum::http::Uri>() else {
+    let trimmed = origin.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+        return false;
+    }
+
+    // Cursor / VS Code desktop MCP clients send app-scheme Origins that are not
+    // parseable as http URIs (or have empty hosts). Allow those explicitly.
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("vscode-file:")
+        || lower.starts_with("vscode-webview:")
+        || lower.starts_with("cursor:")
+    {
+        return true;
+    }
+
+    let Ok(uri) = trimmed.parse::<axum::http::Uri>() else {
         return false;
     };
 
@@ -1042,10 +1383,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn accept_rewrite_detects_incomplete_headers() {
+        assert!(accept_needs_rewrite(""));
+        assert!(accept_needs_rewrite("application/json"));
+        assert!(accept_needs_rewrite("text/event-stream"));
+        assert!(accept_needs_rewrite("*/*"));
+        assert!(!accept_needs_rewrite("application/json, text/event-stream"));
+        assert!(!accept_needs_rewrite(
+            "text/event-stream, application/json;q=0.9"
+        ));
+    }
+
+    #[test]
     fn allows_local_origins() {
         assert!(is_allowed_local_origin("http://127.0.0.1:1420"));
         assert!(is_allowed_local_origin("http://localhost:1420"));
         assert!(is_allowed_local_origin("http://[::1]:1420"));
+        // Cursor / VS Code desktop MCP clients.
+        assert!(is_allowed_local_origin("vscode-file://vscode-app"));
+        assert!(is_allowed_local_origin("vscode-webview://abcdef"));
+        assert!(is_allowed_local_origin("cursor://anysphere.cursor-mcp"));
     }
 
     #[test]
@@ -1060,6 +1417,81 @@ mod tests {
     fn rejects_null_origin() {
         // `null` is sent by sandboxed iframes / file:// pages and must be denied.
         assert!(!is_allowed_local_origin("null"));
+    }
+
+    #[test]
+    fn cors_pna_headers_reflect_allowed_origin() {
+        let mut headers = axum::http::HeaderMap::new();
+        apply_cors_pna_headers(&mut headers, Some("vscode-file://vscode-app"));
+        assert_eq!(
+            headers.get(ACCESS_CONTROL_ALLOW_ORIGIN).and_then(|v| v.to_str().ok()),
+            Some("vscode-file://vscode-app")
+        );
+        assert_eq!(
+            headers
+                .get("access-control-allow-private-network")
+                .and_then(|v| v.to_str().ok()),
+            Some("true")
+        );
+        assert_eq!(
+            headers
+                .get("access-control-allow-local-network")
+                .and_then(|v| v.to_str().ok()),
+            Some("true")
+        );
+    }
+
+    #[test]
+    fn ios_platform_preset_fills_defaults() {
+        let c = build_connection_from_mcp(CreateSshConnectionParams {
+            name: String::new(),
+            host: "192.168.0.103".into(),
+            username: String::new(),
+            port: 22,
+            auth_method: None,
+            password: Some("123456".into()),
+            private_key_path: None,
+            passphrase: None,
+            folder: "All Connections".into(),
+            tags: vec![],
+            description: None,
+            platform: Some("ios".into()),
+            elevate: Some("sudo".into()),
+            protocol: None,
+        })
+        .unwrap();
+        assert_eq!(c.name, "iPhone");
+        assert_eq!(c.username, "root");
+        assert_eq!(c.folder, "iOS");
+        assert_eq!(c.protocol, "SSH");
+        assert_eq!(c.password.as_deref(), Some("123456"));
+        assert!(c.tags.iter().any(|t| t == "platform:ios"));
+        assert!(c.tags.iter().any(|t| t == "elevate:sudo"));
+    }
+
+    #[test]
+    fn android_openssh_preset() {
+        let c = build_connection_from_mcp(CreateSshConnectionParams {
+            name: "抖音".into(),
+            host: "192.168.0.107".into(),
+            username: "root".into(),
+            port: 8022,
+            auth_method: Some(SshAuthMethod::PublicKey),
+            password: None,
+            private_key_path: Some("/tmp/key".into()),
+            passphrase: None,
+            folder: "All Connections".into(),
+            tags: vec![],
+            description: None,
+            platform: Some("android".into()),
+            elevate: None,
+            protocol: None,
+        })
+        .unwrap();
+        assert_eq!(c.protocol, "SSH");
+        assert_eq!(c.folder, "Android");
+        assert!(c.tags.iter().any(|t| t == "platform:android"));
+        assert_eq!(c.auth_method, "publickey");
     }
 
     #[test]

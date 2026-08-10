@@ -262,7 +262,9 @@ class _ConnectionTreeState extends State<ConnectionTree> {
                       Text(
                         c.protocol == 'ADB'
                             ? 'adb · ${c.host}:${c.port}'
-                            : '${c.username}@${c.host}:${c.port}',
+                            : _isIos(c)
+                                ? 'ios · ${c.username}@${c.host}:${c.port}'
+                                : '${c.username}@${c.host}:${c.port}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -283,6 +285,11 @@ class _ConnectionTreeState extends State<ConnectionTree> {
     );
   }
 
+  bool _isIos(ConnectionDto c) => c.tags.any((t) {
+        final lower = t.trim().toLowerCase();
+        return lower == 'platform:ios' || lower == 'ios';
+      });
+
   Widget _authBadge(ConnectionDto c) {
     if (c.protocol == 'ADB') {
       return const Padding(
@@ -290,6 +297,15 @@ class _ConnectionTreeState extends State<ConnectionTree> {
         child: Tooltip(
           message: 'ADB（安卓）',
           child: Icon(Icons.android, size: 12, color: AppColors.online),
+        ),
+      );
+    }
+    if (_isIos(c)) {
+      return const Padding(
+        padding: EdgeInsets.only(left: 6),
+        child: Tooltip(
+          message: 'iOS 越狱 SSH',
+          child: Icon(Icons.phone_iphone, size: 12, color: AppColors.accent),
         ),
       );
     }

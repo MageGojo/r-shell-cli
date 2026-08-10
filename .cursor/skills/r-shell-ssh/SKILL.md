@@ -123,6 +123,27 @@ Notes:
 
 ## Step 2 — Reuse an existing connection (check first)
 
+**Never hand-edit `~/Library/Application Support/r-shell/workspace.json`.**  
+Add/update/delete connections via MCP (preferred) or CLI so the Conch GUI
+live-refreshes within ~2s.
+
+MCP create presets (`r_shell_ssh_connection_create`):
+
+| `platform` | Effect |
+| --- | --- |
+| `ios` / `iphone` | tags `platform:ios`; defaults root / alpine / port 22 / folder iOS |
+| `android` | tags `platform:android` (OpenSSH/dropbear); folder Android |
+| `adb` | protocol ADB; port 5555 |
+
+Optional `elevate`: `su` \| `sudo` (iOS mobile→root). Example:
+
+```json
+{ "host": "192.168.0.103", "platform": "ios", "password": "123456", "elevate": "sudo" }
+```
+
+For sessions on jailbreak iOS, `ssh_session_open` also accepts `platform=ios`
+and `elevate=su|sudo`.
+
 Before adding anything, list saved connections and reuse a match by `name` or
 `connection_id`:
 

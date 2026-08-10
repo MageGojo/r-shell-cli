@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../bridge/connections_repository.dart';
@@ -49,6 +51,10 @@ class _AppScaffoldState extends State<AppScaffold> {
   String? _loadError;
   String? _selectedId;
 
+  /// MCP/CLI 改 workspace 后 GUI 自动跟上:轮询签名变化才重绘。
+  Timer? _workspacePoll;
+  String? _connectionsSig;
+
   ConnectionDto? get _selected {
     for (final c in _connections) {
       if (c.id == _selectedId) return c;
@@ -59,9 +65,20 @@ class _AppScaffoldState extends State<AppScaffold> {
   @override
   void initState() {
     super.initState();
+    // 监控拿到已删除的 connection id 时,重载列表并清理标签(防「SSH connection not found」死循环)。
+    _monitor.onStaleConnection = _onStaleMonitorConnection;
     _reload();
+    _workspacePoll = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted) return;
+      _reload(quiet: true);
+    });
     _settings.addListener(_onSettingsChanged);
     _initSettings();
+  }
+
+  void _onStaleMonitorConnection() {
+    if (!mounted) return;
+    _reload();
   }
 
   /// 读回持久化设置并应用「即时生效」项:采样间隔 → 监控;MCP 随应用自启。
@@ -83,6 +100,7 @@ class _AppScaffoldState extends State<AppScaffold> {
 
   @override
   void dispose() {
+    _workspacePoll?.cancel();
     _files.dispose();
     _monitor.dispose();
     _mcp.dispose();
@@ -140,9 +158,19 @@ class _AppScaffoldState extends State<AppScaffold> {
     _syncMonitor();
   }
 
-  void _reload() {
+  /// [quiet]=true:仅当连接列表签名变化时刷新(给 workspace 轮询用,避免无谓 setState)。
+  void _reload({bool quiet = false}) {
     try {
       final list = _repo.list();
+      final sig = list
+          .map(
+            (c) =>
+                '${c.id}|${c.name}|${c.host}|${c.port}|${c.username}|${c.protocol}|${c.tags.join(',')}',
+          )
+          .join(';');
+      if (quiet && sig == _connectionsSig) return;
+      final changed = sig != _connectionsSig;
+      _connectionsSig = sig;
       setState(() {
         _connections = list;
         _loadError = null;
@@ -150,10 +178,12 @@ class _AppScaffoldState extends State<AppScaffold> {
           _selectedId = null;
         }
       });
+      _blocks.pruneMissing(list.map((c) => c.id).toSet());
+      // 外部增删连接时重挂监控;签名未变则仍走幂等 setConnection。
+      if (!quiet || changed) _syncMonitor();
     } catch (e) {
-      setState(() => _loadError = '$e');
+      if (!quiet) setState(() => _loadError = '$e');
     }
-    _syncMonitor();
   }
 
   Future<void> _openEditor({ConnectionDto? existing}) async {

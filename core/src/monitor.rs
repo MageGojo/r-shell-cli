@@ -220,12 +220,239 @@ impl StatsSnapshot {
 }
 
 /// Which OS family a connection's stats are collected from. Detected once per
-/// connection (the Linux `/proc` command and the Windows PowerShell command are
-/// mutually exclusive), then cached to avoid re-probing every sample.
+/// connection, then cached to avoid re-probing every sample.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatsPlatform {
     Unix,
+    /// macOS / jailbroken iOS (`sysctl` + `vm_stat`, no `/proc`).
+    Darwin,
     Windows,
+}
+
+/// Sentinel first line of [`darwin_stats_command`].
+pub const DARWIN_STATS_SENTINEL: &str = "RSHELL_DARWIN";
+
+/// One-shot Darwin / jailbroken-iOS collector. Emits `KEY=VALUE` for
+/// [`parse_darwin_snapshot`]. Prefers Procursus `python3` under `/var/jb`;
+/// if missing (common on rootless JB), falls back to pure shell — never `exit 1`.
+///
+/// Python path **must not** use `subprocess` `shell=True` (no `/bin/sh` on many
+/// rootless installs). Memory: used ≈ wired+active+compressor; avail ≈
+/// free+speculative+inactive+purgeable. No fake CPU% from loadavg.
+fn darwin_stats_shell_fallback() -> &'static str {
+    // Prefer tools on `/var/jb` PATH (set by caller). No awk/python — only
+    // sysctl / vm_stat / df / pagesize / tr / date, which rootless JB usually has.
+    concat!(
+        "echo RSHELL_DARWIN; ",
+        "page=$(pagesize 2>/dev/null || echo 16384); page=${page:-16384}; ",
+        "memtotal=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 )); ",
+        "cores=$(sysctl -n hw.ncpu 2>/dev/null || echo 0); ",
+        "loadraw=$(sysctl -n vm.loadavg 2>/dev/null | tr -cd '0-9. '); ",
+        "set -- $loadraw; load=${1:-0}; ",
+        "bt=$(sysctl -n kern.boottime 2>/dev/null || true); ",
+        "set -- $(printf '%s' \"$bt\" | tr -cd '0-9 '); sec=${1:-0}; ",
+        "now=$(date +%s 2>/dev/null || echo 0); ",
+        "up=0; ",
+        "if [ \"$sec\" -gt 0 ] 2>/dev/null; then up=$((now - sec)); fi; ",
+        "osname=$(uname -sr 2>/dev/null || echo Darwin); ",
+        "vs=$(vm_stat 2>/dev/null || true); ",
+        "pg(){ ",
+        "  k=\"$1\"; out=; ",
+        "  out=$(printf '%s\\n' \"$vs\" | while IFS= read -r line; do ",
+        "    case \"$line\" in *\"$k\"*) printf '%s' \"$line\" | tr -cd '0-9'; echo; break;; esac; ",
+        "  done); ",
+        "  echo \"${out:-0}\"; ",
+        "}; ",
+        "wired=$(pg 'Pages wired'); wired=${wired:-0}; ",
+        "active=$(pg 'Pages active'); active=${active:-0}; ",
+        "inactive=$(pg 'Pages inactive'); inactive=${inactive:-0}; ",
+        "spec=$(pg 'Pages speculative'); spec=${spec:-0}; ",
+        "free=$(pg 'Pages free'); free=${free:-0}; ",
+        "purge=$(pg 'Pages purgeable'); purge=${purge:-0}; ",
+        "comp=$(pg 'Pages occupied by compressor'); comp=${comp:-0}; ",
+        "used=$(( (wired + active + comp) * page / 1024 )); ",
+        "avail=$(( (free + spec + inactive + purge) * page / 1024 )); ",
+        "if [ \"$memtotal\" -gt 0 ] 2>/dev/null && [ $((avail + used)) -gt \"$memtotal\" ]; then ",
+        "  avail=$((memtotal - used)); ",
+        "fi; ",
+        "if [ \"$avail\" -lt 0 ] 2>/dev/null; then avail=0; fi; ",
+        "echo CORES=$cores; ",
+        "echo MEMTOTAL=$memtotal; ",
+        "echo MEMUSED=$used; ",
+        "echo MEMAVAIL=$avail; ",
+        "echo LOAD=$load; ",
+        "echo UPTIME=$up; ",
+        "echo OS=$osname; ",
+        // Avoid `*[!0-9]*` (zsh EXTENDED_GLOB / hist quirks). Prefer POSIX `[ -eq ]`.
+        "df -kP 2>/dev/null | while IFS= read -r line; do ",
+        "  set -- $line; ",
+        "  [ \"$#\" -ge 6 ] || continue; ",
+        "  dtotal=$2; dused=$3; ",
+        "  shift 5; dmount=$1; ",
+        "  [ \"$dtotal\" -eq \"$dtotal\" ] 2>/dev/null || continue; ",
+        "  [ \"$dtotal\" -gt 0 ] 2>/dev/null || continue; ",
+        "  case \"$dmount\" in /dev|/dev/*) continue;; esac; ",
+        "  dfree=$((dtotal - dused)); ",
+        "  if [ \"$dfree\" -lt 0 ] 2>/dev/null; then dfree=0; fi; ",
+        "  printf 'DISK=%s|%s|%s\\n' \"$dmount\" \"$dtotal\" \"$dfree\"; ",
+        "done; ",
+        "exit 0"
+    )
+}
+
+pub fn darwin_stats_command() -> String {
+    // Prefer Python when available; otherwise pure shell — NEVER exit 1.
+    // Python via `-c` with embedded newlines; no single quotes in the payload.
+    let mut cmd = String::from(concat!(
+        "export PATH=/var/jb/usr/bin:/var/jb/bin:/var/jb/usr/sbin:/var/jb/sbin:",
+        "/iosbinpack64/usr/bin:/iosbinpack64/bin:/usr/bin:/bin:/usr/sbin:/sbin; ",
+        // iOS OpenSSH often uses zsh as the login shell. zsh does NOT split
+        // unquoted `$var` by default, so `set -- $line` / `set -- $loadraw`
+        // become a single field and the df parser skips every row (Disk 0/0).
+        // Enable SH_WORD_SPLIT for this snippet; no-op on bash/dash.
+        "[ -n \"$ZSH_VERSION\" ] && setopt SH_WORD_SPLIT 2>/dev/null; ",
+        "PY=/var/jb/usr/bin/python3; ",
+        "[ -x \"$PY\" ] || PY=$(command -v python3 2>/dev/null); ",
+        "[ -n \"$PY\" ] || PY=$(command -v python 2>/dev/null); ",
+        "[ -n \"$PY\" ] || { ",
+    ));
+    cmd.push_str(darwin_stats_shell_fallback());
+    cmd.push_str("; }; ");
+    cmd.push_str(concat!(
+        "\"$PY\" -c \"",
+        "import re,time,subprocess,os\n",
+        "P=['/var/jb/usr/sbin','/var/jb/usr/bin','/var/jb/bin','/var/jb/sbin','/usr/sbin','/usr/bin','/bin','/sbin']\n",
+        "def which(n):\n",
+        " for d in P:\n",
+        "  p=os.path.join(d,n)\n",
+        "  if os.path.isfile(p) and os.access(p,os.X_OK): return p\n",
+        " return n\n",
+        "def S(argv):\n",
+        " try: return subprocess.check_output(argv,stderr=subprocess.DEVNULL).decode('utf-8','replace')\n",
+        " except Exception: return ''\n",
+        "sysctl=which('sysctl'); vmstat=which('vm_stat'); uname=which('uname'); dfb=which('df'); psz=which('pagesize')\n",
+        "page=int((S([psz]).strip() or '16384'))\n",
+        "memtotal=int(S([sysctl,'-n','hw.memsize']).strip() or '0')//1024\n",
+        "vs=S([vmstat])\n",
+        "def pg(n):\n",
+        " m=re.search(n+r'[^0-9]*([0-9]+)',vs)\n",
+        " return int(m.group(1)) if m else 0\n",
+        "wired=pg('Pages wired')*page//1024\n",
+        "active=pg('Pages active')*page//1024\n",
+        "inactive=pg('Pages inactive')*page//1024\n",
+        "spec=pg('Pages speculative')*page//1024\n",
+        "free=pg('Pages free')*page//1024\n",
+        "purge=pg('Pages purgeable')*page//1024\n",
+        "comp=pg('Pages occupied by compressor')*page//1024\n",
+        "used=wired+active+comp\n",
+        "avail=free+spec+inactive+purge\n",
+        "if avail+used>memtotal and memtotal>0: avail=max(memtotal-used,0)\n",
+        "cores=int(S([sysctl,'-n','hw.ncpu']).strip() or '0')\n",
+        "lm=re.search(r'([0-9]+\\.[0-9]+)', S([sysctl,'-n','vm.loadavg']))\n",
+        "load=float(lm.group(1)) if lm else 0.0\n",
+        "bm=re.search(r'sec\\s*=\\s*([0-9]+)', S([sysctl,'-n','kern.boottime']))\n",
+        "up=int(time.time())-int(bm.group(1)) if bm else 0\n",
+        "osname=S([uname,'-sr']).strip()\n",
+        "print('RSHELL_DARWIN')\n",
+        // No CPU= line: loadavg≠CPU%; UI keeps CPU at 0 until a real sampler exists.
+        "print('CORES=%d'%cores)\n",
+        "print('MEMTOTAL=%d'%memtotal)\n",
+        "print('MEMUSED=%d'%used)\n",
+        "print('MEMAVAIL=%d'%avail)\n",
+        "print('LOAD=%.2f'%load)\n",
+        "print('UPTIME=%d'%up)\n",
+        "print('OS='+osname)\n",
+        "df=S([dfb,'-kP'])\n",
+        "for line in df.splitlines()[1:]:\n",
+        " p=line.split()\n",
+        " if len(p)>=6 and p[1].isdigit():\n",
+        "  total,used_kb,mount=int(p[1]),int(p[2]),p[5]\n",
+        "  if total>0 and not mount.startswith('/dev'):\n",
+        "   print('DISK=%s|%d|%d'%(mount,total,max(total-used_kb,0)))\n",
+        "\"",
+    ));
+    cmd
+}
+
+/// Parse [`darwin_stats_command`] `KEY=VALUE` output into a snapshot.
+pub fn parse_darwin_snapshot(raw: &str) -> StatsSnapshot {
+    let mut snap = StatsSnapshot::default();
+    let mut mem_total = 0u64;
+    let mut mem_used = 0u64;
+    let mut mem_avail = 0u64;
+    let mut disks: Vec<DiskUsage> = Vec::new();
+
+    if !raw.contains(DARWIN_STATS_SENTINEL) {
+        return snap;
+    }
+
+    for line in raw.lines() {
+        let line = line.trim();
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "CPU" => {
+                if let Ok(v) = value.parse::<f32>() {
+                    snap.cpu_percent_direct = Some(v.clamp(0.0, 100.0));
+                }
+            }
+            "CORES" => {
+                snap.cpu_cores = value.parse().unwrap_or(0);
+            }
+            "MEMTOTAL" => {
+                mem_total = value.parse().unwrap_or(0);
+            }
+            "MEMUSED" => {
+                mem_used = value.parse().unwrap_or(0);
+            }
+            "MEMAVAIL" => {
+                mem_avail = value.parse().unwrap_or(0);
+            }
+            "LOAD" => {
+                snap.load1 = value.parse().unwrap_or(0.0);
+            }
+            "UPTIME" => {
+                snap.uptime_secs = value.parse::<f64>().unwrap_or(0.0);
+            }
+            "OS" => {
+                snap.os = value.to_string();
+            }
+            "DISK" => {
+                let parts: Vec<&str> = value.split('|').collect();
+                if parts.len() == 3 {
+                    if let (Ok(total_kb), Ok(free_kb)) =
+                        (parts[1].parse::<u64>(), parts[2].parse::<u64>())
+                    {
+                        let used_kb = total_kb.saturating_sub(free_kb);
+                        disks.push(DiskUsage {
+                            mount: parts[0].to_string(),
+                            total_kb,
+                            used_kb,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    snap.mem_total_kb = mem_total;
+    if mem_avail > 0 {
+        snap.mem_available_kb = mem_avail;
+    } else if mem_total > 0 && mem_used <= mem_total {
+        snap.mem_available_kb = mem_total.saturating_sub(mem_used);
+    }
+
+    disks.sort_by(|a, b| b.total_kb.cmp(&a.total_kb));
+    disks.truncate(MAX_DISKS);
+    if let Some(primary) = primary_disk(&disks) {
+        snap.disk_total_kb = primary.total_kb;
+        snap.disk_used_kb = primary.used_kb;
+    }
+    snap.disks = disks;
+    snap
 }
 
 /// Derived, display-ready metrics. Percentages are 0.0..=100.0.
@@ -789,5 +1016,45 @@ magisk                   3867016     5496   3861520       1% /debug_ramdisk
         assert_eq!(format_uptime(90_061.0), "1d 1h 1m");
         assert_eq!(format_kb_pair(5_100_000, 8_192_000), "4.9/7.8 GB");
         assert_eq!(format_kb_pair(512, 1000), "512.0/1000.0 KB");
+    }
+
+    #[test]
+    fn parses_darwin_snapshot_output() {
+        // No CPU= — iOS has no reliable cp_time; load stays in LOAD only.
+        let raw = "RSHELL_DARWIN\nCORES=6\nMEMTOTAL=3848928\nMEMUSED=2540000\n\
+                   MEMAVAIL=1200000\nLOAD=3.29\nUPTIME=273900\nOS=Darwin 22.2.0\n\
+                   DISK=/private/var|200000000|150000000\nDISK=/|249879124|150232292\n";
+        let snap = parse_darwin_snapshot(raw);
+        assert!(!snap.is_empty());
+        assert_eq!(snap.cpu_percent_direct, None);
+        assert_eq!(snap.cpu_cores, 6);
+        assert_eq!(snap.mem_total_kb, 3_848_928);
+        assert_eq!(snap.mem_available_kb, 1_200_000);
+        assert!((snap.load1 - 3.29).abs() < 1e-6);
+        assert!((snap.uptime_secs - 273_900.0).abs() < 1e-6);
+        assert_eq!(snap.os, "Darwin 22.2.0");
+        assert!(snap.disks.len() >= 2);
+        // Largest volume first (`/` 249M > `/private/var` 200M).
+        assert_eq!(snap.disks[0].mount, "/");
+        assert_eq!(snap.disk_total_kb, 249_879_124);
+        let stats = SystemStats::from_samples(None, &snap, 0.0);
+        // ~ (3848928-1200000)/3848928 ≈ 68.8%
+        assert!((stats.mem_percent - 68.8).abs() < 0.2);
+        assert_eq!(stats.cpu_percent, 0.0);
+    }
+
+    #[test]
+    fn darwin_without_sentinel_is_empty() {
+        assert!(parse_darwin_snapshot("CPU=10\nMEMTOTAL=100\n").is_empty());
+    }
+
+    #[test]
+    fn darwin_stats_command_falls_back_without_exit_1() {
+        let cmd = darwin_stats_command();
+        assert!(cmd.contains("RSHELL_DARWIN"));
+        assert!(cmd.contains("sysctl -n hw.memsize"));
+        // Must not hard-fail when python3 is missing (broke iPhone monitor).
+        assert!(!cmd.contains("RSHELL_DARWIN_NO_PY"));
+        assert!(!cmd.contains("exit 1"));
     }
 }

@@ -53,6 +53,25 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
   FreeLibrary(user32_module);
 }
 
+HICON LoadAppIconSized(int cx, int cy) {
+  return static_cast<HICON>(LoadImage(GetModuleHandle(nullptr),
+                                      MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON,
+                                      cx, cy, LR_DEFAULTCOLOR));
+}
+
+void ApplyWindowIcons(HWND hwnd) {
+  HICON big = LoadAppIconSized(GetSystemMetrics(SM_CXICON),
+                               GetSystemMetrics(SM_CYICON));
+  HICON small = LoadAppIconSized(GetSystemMetrics(SM_CXSMICON),
+                                 GetSystemMetrics(SM_CYSMICON));
+  if (big) {
+    SendMessage(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big));
+  }
+  if (small) {
+    SendMessage(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small));
+  }
+}
+
 }  // namespace
 
 // Manages the Win32Window's window class registration.
@@ -95,8 +114,8 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
     window_class.hInstance = GetModuleHandle(nullptr);
-    window_class.hIcon =
-        LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
+    window_class.hIcon = LoadAppIconSized(GetSystemMetrics(SM_CXICON),
+                                          GetSystemMetrics(SM_CYICON));
     window_class.hbrBackground = 0;
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
@@ -144,6 +163,7 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
+  ApplyWindowIcons(window);
   UpdateTheme(window);
 
   return OnCreate();

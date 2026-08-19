@@ -74,8 +74,10 @@ Section "Install"
   WriteRegStr HKLM "Software\${APP_NAME}" "InstallDir" "$INSTDIR"
 
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
-  CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
-  CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
+  ; Pin icon to the exe itself. A standalone .ico path goes stale when the
+  ; portable folder is moved, and Windows then shows the generic document icon.
+  CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\${APP_EXE}" 0
+  CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\${APP_EXE}" 0
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr   HKLM "${APP_REGKEY}" "DisplayName"     "${APP_NAME}"

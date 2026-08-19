@@ -1,5 +1,6 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <shlobj.h>
 #include <windows.h>
 
 #include "flutter_window.h"
@@ -7,6 +8,11 @@
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  // Bind the process to a stable AppUserModelID before any window is created,
+  // otherwise Windows 11 may show the generic document icon on the taskbar
+  // (especially when launched from a shortcut whose .ico path is stale).
+  SetCurrentProcessExplicitAppUserModelID(L"cn.apizero.Conch");
+
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
